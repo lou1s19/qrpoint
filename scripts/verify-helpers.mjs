@@ -9,6 +9,7 @@ import {
   getLogoMetrics,
   getQRText,
   getRenderOptions,
+  normalizeQRStyle,
 } from '../src/qr-utils.js'
 
 function test(name, fn) {
@@ -45,6 +46,12 @@ test('getRenderOptions switches error correction with logo presence', () => {
   assert.equal(withLogo.errorCorrectionLevel, 'H')
   assert.equal(withoutLogo.width, 320)
   assert.equal(withLogo.margin, 2)
+})
+
+test('normalizeQRStyle only accepts known values', () => {
+  assert.equal(normalizeQRStyle('dots'), 'dots')
+  assert.equal(normalizeQRStyle('rounded'), 'rounded')
+  assert.equal(normalizeQRStyle('unknown'), 'classic')
 })
 
 test('getLogoMetrics keeps the logo constrained', () => {

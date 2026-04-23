@@ -1,12 +1,14 @@
-import QRCode from 'qrcode'
 import './style.css'
-import { clamp, getLogoMetrics, getQRText, getRenderOptions } from './qr-utils.js'
-
-const presets = {
-  url: 'https://example.com',
-  text: 'Hallo Boss',
-  wifi: 'WIFI:T:WPA;S:MeinWLAN;P:geheimespasswort;;',
-}
+import {
+  QR_STYLES,
+  clamp,
+  getLogoMetrics,
+  getQRText,
+  getRenderOptions,
+  normalizeQRStyle,
+  presets,
+  renderStyledQRCode,
+} from './qr-utils.js'
 
 const state = {
   logoDataUrl: '',
@@ -38,6 +40,13 @@ app.innerHTML = `
         <div class="field-group">
           <label for="content">Inhalt</label>
           <textarea id="content" rows="4" placeholder="Text oder Link"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label for="style">Muster</label>
+          <select id="style">
+            ${QR_STYLES.map((style) => `<option value="${style.value}">${style.label}</option>`).join('')}
+          </select>
         </div>
 
         <button id="generate" type="button">Erstellen</button>
@@ -90,6 +99,7 @@ app.innerHTML = `
 
 const presetEl = document.querySelector('#preset')
 const contentEl = document.querySelector('#content')
+const styleEl = document.querySelector('#style')
 const sizeEl = document.querySelector('#size')
 const marginEl = document.querySelector('#margin')
 const logoEl = document.querySelector('#logo')
@@ -118,6 +128,7 @@ function getSettings() {
     margin,
     logoScale,
     hasLogo,
+    style: normalizeQRStyle(styleEl.value),
   }
 }
 
@@ -194,20 +205,22 @@ async function renderQR() {
     return
   }
 
-  const size = settings.size
-  canvasEl.width = size
-  canvasEl.height = size
-
   try {
-    await QRCode.toCanvas(canvasEl, settings.text, getRenderOptions(settings))
+    await renderStyledQRCode(canvasEl, settings.text, {
+      ...getRenderOptions(settings),
+      style: settings.style,
+    })
 
     if (settings.hasLogo && state.logoDataUrl) {
       const image = await loadImage(state.logoDataUrl)
       if (renderId !== state.renderId) return
       drawLogoOverlay(canvasEl, image, settings)
-      statusEl.textContent = 'QR-Code mit Logo erstellt.'
+      statusEl.textContent = 'QR mit Logo erstellt.'
+    } else if (settings.style !== 'classic') {
+      const styleLabel = QR_STYLES.find((item) => item.value === settings.style)?.label ?? 'Muster'
+      statusEl.textContent = `${styleLabel} erstellt.`
     } else {
-      statusEl.textContent = 'QR-Code erstellt.'
+      statusEl.textContent = 'QR erstellt.'
     }
   } catch (error) {
     statusEl.textContent = error instanceof Error ? error.message : 'Fehler beim Erstellen.'
@@ -223,7 +236,7 @@ function downloadPNG() {
 }
 
 function setLogoName(name) {
-  logoNameEl.textContent = name || 'Kein Logo gewählt'
+  logoNameEl.textContent = name || 'Kein Logo'
 }
 
 async function handleLogoUpload(event) {
@@ -231,7 +244,7 @@ async function handleLogoUpload(event) {
   if (!file) return
 
   if (!file.type.startsWith('image/')) {
-    statusEl.textContent = 'Bitte ein Bild als Logo auswählen.'
+    statusEl.textContent = 'Bitte ein Bild auswählen.'
     logoEl.value = ''
     return
   }
@@ -245,7 +258,7 @@ async function handleLogoUpload(event) {
   } catch (error) {
     state.logoDataUrl = ''
     state.logoName = ''
-    setLogoName('Kein Logo gewählt')
+    setLogoName('Kein Logo')
     statusEl.textContent = 'Logo konnte nicht geladen werden.'
     console.error(error)
   }
@@ -264,7 +277,7 @@ function clearLogo() {
   state.logoDataUrl = ''
   state.logoName = ''
   logoEl.value = ''
-  setLogoName('Kein Logo gewählt')
+  setLogoName('Kein Logo')
   renderQR()
 }
 
@@ -272,11 +285,13 @@ presetEl.addEventListener('change', syncPreset)
 generateBtn.addEventListener('click', renderQR)
 sizeEl.addEventListener('input', renderQR)
 marginEl.addEventListener('input', renderQR)
+styleEl.addEventListener('change', renderQR)
 logoScaleEl.addEventListener('input', renderQR)
 downloadBtn.addEventListener('click', downloadPNG)
 contentEl.addEventListener('input', renderQR)
 logoEl.addEventListener('change', handleLogoUpload)
 clearLogoBtn.addEventListener('click', clearLogo)
 
+styleEl.value = 'classic'
 syncPreset()
-setLogoName('Kein Logo gewählt')
+setLogoName('Kein Logo')
