@@ -21,14 +21,8 @@ app.innerHTML = `
     <section class="hero">
       <div class="hero-copy">
         <p class="eyebrow">QRPoint</p>
-        <h1>QR-Code Generator</h1>
-        <p class="lead">Erstelle schnell QR-Codes für Links, Texte oder WLAN. Jetzt auch mit Logo-Upload in der Mitte – scan-sicher und clean.</p>
-        <div class="feature-strip" aria-label="Funktionen">
-          <span>Link / Text / WLAN</span>
-          <span>Logo-Upload</span>
-          <span>PNG-Download</span>
-          <span>Erweiterbar für mehr Features</span>
-        </div>
+        <h1>QR-Code einfach erstellen</h1>
+        <p class="lead">Link eingeben, QR generieren, fertig.</p>
       </div>
 
       <div class="card form-card">
@@ -43,49 +37,53 @@ app.innerHTML = `
 
         <div class="field-group">
           <label for="content">Inhalt</label>
-          <textarea id="content" rows="5" placeholder="Text oder Link"></textarea>
+          <textarea id="content" rows="4" placeholder="Text oder Link"></textarea>
         </div>
 
-        <div class="row">
-          <div class="field-group">
-            <label for="size">Größe</label>
-            <input id="size" type="range" min="128" max="1024" step="16" value="320" />
-          </div>
-          <div class="field-group">
-            <label for="margin">Rand</label>
-            <input id="margin" type="range" min="0" max="8" step="1" value="2" />
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label for="logo">Logo hochladen</label>
-          <input id="logo" type="file" accept="image/*" />
-          <p class="field-note">PNG, JPG oder SVG. Das Logo wird mittig eingefügt und automatisch klein gehalten.</p>
-        </div>
-
-        <div class="row row-actions">
-          <div class="field-group">
-            <label for="logoScale">Logo-Größe</label>
-            <input id="logoScale" type="range" min="8" max="28" step="1" value="18" />
-          </div>
-          <div class="action-stack">
-            <span class="logo-pill" id="logoName">Kein Logo gewählt</span>
-            <button id="clearLogo" type="button" class="secondary">Logo entfernen</button>
-          </div>
-        </div>
-
-        <button id="generate" type="button">QR generieren</button>
+        <button id="generate" type="button">Erstellen</button>
         <p id="status" class="status">Bereit.</p>
+
+        <details class="advanced-panel">
+          <summary>Mehr Einstellungen</summary>
+
+          <div class="advanced-body">
+            <div class="row">
+              <div class="field-group">
+                <label for="size">Größe</label>
+                <input id="size" type="range" min="128" max="1024" step="16" value="320" />
+              </div>
+              <div class="field-group">
+                <label for="margin">Rand</label>
+                <input id="margin" type="range" min="0" max="8" step="1" value="2" />
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="logo">Logo</label>
+              <input id="logo" type="file" accept="image/*" />
+            </div>
+
+            <div class="row row-actions">
+              <div class="field-group">
+                <label for="logoScale">Logo-Größe</label>
+                <input id="logoScale" type="range" min="8" max="28" step="1" value="18" />
+              </div>
+              <div class="action-stack">
+                <span class="logo-pill" id="logoName">Kein Logo</span>
+                <button id="clearLogo" type="button" class="secondary">Entfernen</button>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
     </section>
 
     <section class="output card">
       <div class="preview-head">
-        <h2>Vorschau</h2>
-        <button id="download" type="button" class="secondary">PNG herunterladen</button>
+        <h2>QR</h2>
+        <button id="download" type="button" class="secondary">Download</button>
       </div>
       <canvas id="qr" width="320" height="320" aria-label="QR-Code Vorschau"></canvas>
-      <p class="hint">Tipp: Für Logos immer lieber etwas kleiner halten – so bleibt der QR-Code gut scanbar.</p>
     </section>
   </main>
 `
