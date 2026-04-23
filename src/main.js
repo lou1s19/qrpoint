@@ -47,6 +47,7 @@ app.innerHTML = `
           <select id="style">
             ${QR_STYLES.map((style) => `<option value="${style.value}">${style.label}</option>`).join('')}
           </select>
+          <p class="hint">Alle Muster bleiben scanbar. Die Finder-Elemente bleiben bewusst stabil.</p>
         </div>
 
         <button id="generate" type="button">Erstellen</button>

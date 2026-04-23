@@ -2,8 +2,10 @@ import QRCode from 'qrcode'
 
 export const QR_STYLES = [
   { value: 'classic', label: 'Klassisch' },
-  { value: 'dots', label: 'Punkte' },
+  { value: 'dots', label: 'Kreise' },
   { value: 'rounded', label: 'Rund' },
+  { value: 'soft', label: 'Weich' },
+  { value: 'diamond', label: 'Diamant' },
 ]
 
 export const presets = {
@@ -92,6 +94,18 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
   ctx.fill()
 }
 
+function drawDiamond(ctx, x, y, size, insetRatio = 0.14) {
+  const inset = size * insetRatio
+  const half = size / 2
+  ctx.beginPath()
+  ctx.moveTo(x + half, y + inset)
+  ctx.lineTo(x + size - inset, y + half)
+  ctx.lineTo(x + half, y + size - inset)
+  ctx.lineTo(x + inset, y + half)
+  ctx.closePath()
+  ctx.fill()
+}
+
 function isFinderModule(row, col, size) {
   const lastFinderStart = size - 7
   return (
@@ -110,8 +124,13 @@ function isSpecialModule(row, col, size) {
 }
 
 function drawModule(ctx, style, x, y, size, isSpecial) {
-  if (style === 'dots' && !isSpecial) {
-    const diameter = size * 0.78
+  if (isSpecial || style === 'classic') {
+    ctx.fillRect(x, y, size, size)
+    return
+  }
+
+  if (style === 'dots') {
+    const diameter = size * 0.82
     const offset = (size - diameter) / 2
     ctx.beginPath()
     ctx.arc(x + size / 2, y + size / 2, diameter / 2, 0, Math.PI * 2)
@@ -119,8 +138,18 @@ function drawModule(ctx, style, x, y, size, isSpecial) {
     return
   }
 
-  if (style === 'rounded' && !isSpecial) {
-    drawRoundedRect(ctx, x + size * 0.08, y + size * 0.08, size * 0.84, size * 0.84, size * 0.28)
+  if (style === 'rounded') {
+    drawRoundedRect(ctx, x + size * 0.08, y + size * 0.08, size * 0.84, size * 0.84, size * 0.3)
+    return
+  }
+
+  if (style === 'soft') {
+    drawRoundedRect(ctx, x + size * 0.05, y + size * 0.05, size * 0.9, size * 0.9, size * 0.42)
+    return
+  }
+
+  if (style === 'diamond') {
+    drawDiamond(ctx, x, y, size)
     return
   }
 
@@ -136,15 +165,19 @@ export function renderStyledQRCode(canvas, text, options = {}) {
     style = 'classic',
   } = options
 
+  const normalizedStyle = normalizeQRStyle(style)
   const qr = QRCode.create(text, { errorCorrectionLevel })
   const size = qr.modules.size
   const totalSize = size + margin * 2
-  const cellSize = width / totalSize
+  const moduleSize = Math.max(1, Math.floor(width / totalSize))
+  const renderSize = moduleSize * totalSize
+  const offset = Math.floor((width - renderSize) / 2)
 
   canvas.width = width
   canvas.height = width
 
   const ctx = canvas.getContext('2d')
+  ctx.imageSmoothingEnabled = false
   ctx.fillStyle = color.light
   ctx.fillRect(0, 0, width, width)
 
@@ -152,9 +185,9 @@ export function renderStyledQRCode(canvas, text, options = {}) {
   for (let row = 0; row < size; row += 1) {
     for (let col = 0; col < size; col += 1) {
       if (!qr.modules.data[row * size + col]) continue
-      const x = (margin + col) * cellSize
-      const y = (margin + row) * cellSize
-      drawModule(ctx, style, x, y, cellSize, isSpecialModule(row, col, size))
+      const x = offset + (margin + col) * moduleSize
+      const y = offset + (margin + row) * moduleSize
+      drawModule(ctx, normalizedStyle, x, y, moduleSize, isSpecialModule(row, col, size))
     }
   }
 

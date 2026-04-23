@@ -51,6 +51,8 @@ test('getRenderOptions switches error correction with logo presence', () => {
 test('normalizeQRStyle only accepts known values', () => {
   assert.equal(normalizeQRStyle('dots'), 'dots')
   assert.equal(normalizeQRStyle('rounded'), 'rounded')
+  assert.equal(normalizeQRStyle('soft'), 'soft')
+  assert.equal(normalizeQRStyle('diamond'), 'diamond')
   assert.equal(normalizeQRStyle('unknown'), 'classic')
 })
 
