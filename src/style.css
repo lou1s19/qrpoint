@@ -38,6 +38,10 @@ select {
   align-items: start;
 }
 
+.hero-copy {
+  padding-right: 8px;
+}
+
 .eyebrow {
   display: inline-flex;
   margin: 0 0 12px;
@@ -70,6 +74,26 @@ h1 {
   color: #475569;
 }
 
+.feature-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.feature-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.65);
+  color: #334155;
+  font-size: 0.92rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
 .card {
   background: rgba(255, 255, 255, 0.76);
   backdrop-filter: blur(16px);
@@ -81,7 +105,12 @@ h1 {
 .form-card {
   padding: 22px;
   display: grid;
-  gap: 10px;
+  gap: 14px;
+}
+
+.field-group {
+  display: grid;
+  gap: 8px;
 }
 
 label {
@@ -92,12 +121,14 @@ label {
 
 textarea,
 select,
-input[type='range'] {
+input[type='range'],
+input[type='file'] {
   width: 100%;
 }
 
 textarea,
-select {
+select,
+input[type='file'] {
   border: 1px solid #cbd5e1;
   border-radius: 14px;
   background: white;
@@ -105,10 +136,49 @@ select {
   color: #0f172a;
 }
 
+input[type='file'] {
+  padding-block: 10px;
+}
+
+input[type='range'] {
+  accent-color: #4f46e5;
+}
+
+.field-note {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #64748b;
+  line-height: 1.5;
+}
+
 .row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+.row-actions {
+  align-items: end;
+}
+
+.action-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.logo-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #334155;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 button {
@@ -191,5 +261,13 @@ button:active {
   .preview-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .feature-strip {
+    gap: 8px;
+  }
+
+  .feature-strip span {
+    font-size: 0.86rem;
   }
 }
