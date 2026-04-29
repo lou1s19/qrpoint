@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Scanly Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface": "#faf8ff",
+                    "surface-dim": "#d2d9f4",
+                    "on-tertiary-fixed-variant": "#703700",
+                    "inverse-primary": "#c0c1ff",
+                    "on-primary": "#ffffff",
+                    "tertiary": "#904900",
+                    "on-primary-container": "#fffbff",
+                    "on-secondary-fixed": "#001e2f",
+                    "inverse-on-surface": "#eef0ff",
+                    "tertiary-fixed-dim": "#ffb783",
+                    "error-container": "#ffdad6",
+                    "on-primary-fixed-variant": "#2f2ebe",
+                    "on-secondary-container": "#004666",
+                    "inverse-surface": "#283044",
+                    "surface-container": "#eaedff",
+                    "secondary-container": "#39b8fd",
+                    "on-background": "#131b2e",
+                    "on-secondary": "#ffffff",
+                    "surface-bright": "#faf8ff",
+                    "primary-fixed-dim": "#c0c1ff",
+                    "surface-variant": "#dae2fd",
+                    "on-tertiary-container": "#fffbff",
+                    "surface-container-low": "#f2f3ff",
+                    "surface-container-lowest": "#ffffff",
+                    "on-tertiary": "#ffffff",
+                    "on-error-container": "#93000a",
+                    "on-surface": "#131b2e",
+                    "on-secondary-fixed-variant": "#004c6e",
+                    "outline": "#767586",
+                    "surface-container-high": "#e2e7ff",
+                    "secondary-fixed-dim": "#89ceff",
+                    "background": "#faf8ff",
+                    "primary-fixed": "#e1e0ff",
+                    "primary-container": "#6063ee",
+                    "tertiary-container": "#b55d00",
+                    "on-error": "#ffffff",
+                    "on-tertiary-fixed": "#301400",
+                    "error": "#ba1a1a",
+                    "on-primary-fixed": "#07006c",
+                    "surface-tint": "#494bd6",
+                    "on-surface-variant": "#464554",
+                    "secondary-fixed": "#c9e6ff",
+                    "primary": "#4648d4",
+                    "outline-variant": "#c7c4d7",
+                    "secondary": "#006591",
+                    "surface-container-highest": "#dae2fd",
+                    "tertiary-fixed": "#ffdcc5"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "xs": "4px",
+                    "lg": "24px",
+                    "base": "4px",
+                    "sm": "8px",
+                    "md": "16px",
+                    "container-padding": "20px",
+                    "gutter": "16px",
+                    "xl": "32px"
+            },
+            "fontFamily": {
+                    "label-sm": ["Inter"],
+                    "body-md": ["Inter"],
+                    "headline-sm": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "label-md": ["Inter"],
+                    "body-lg": ["Inter"]
+            },
+            "fontSize": {
+                    "label-sm": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface font-body-md selection:bg-primary-container selection:text-white">
+<!-- TopAppBar -->
+<header class="bg-white dark:bg-gray-950 fixed top-0 w-full z-50 border-b border-gray-100 dark:border-gray-800 shadow-sm dark:shadow-none transition-colors">
+<div class="flex justify-between items-center h-16 px-5 max-w-screen-xl mx-auto">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary-container/20">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="Close up portrait of a friendly professional man with a slight smile and clean background, soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC8fBBiyxKhPwRiIWbv8aPxmhqWjVU_oCtLvNbUZuxgkT5oghTPVa16tzaw1VaWMyfP5ohxWi4S_Pal1ewDimRIZNjBG_pHFE4fMudFglcvRfW9PM_wVH1cXyLaTb7BbJG7eoEiun1NVx6bFNa78PjA_DCjjkDDTJGZvAv9i_Dfov6QDjSjbQ5t9eNx3joOfaP76YEKpuZloxLJUuV6t8CzXSLeKMP3s223tAaUa2okzqVAhfbwGHUk5CnVnzi31UyFBX8IK-1yM0L9"/>
+</div>
+<span class="text-xl font-extrabold tracking-tight text-gray-900 dark:text-white">Scanly</span>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors active:opacity-80">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+</header>
+<main class="pt-24 pb-32 px-5 max-w-screen-xl mx-auto">
+<!-- Welcoming Header -->
+<section class="mb-lg">
+<h1 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Hello, Alex</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Ready to organize your links today?</p>
+</section>
+<!-- Search Bar -->
+<section class="mb-xl">
+<div class="relative group">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-primary transition-colors" data-icon="search">search</span>
+<input class="w-full h-14 pl-12 pr-4 bg-surface-container-lowest border border-outline-variant rounded-2xl font-body-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-outline/60 shadow-sm" placeholder="Search your QR codes..." type="text"/>
+</div>
+</section>
+<!-- Primary Action Bento Cards -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-md mb-xl">
+<!-- Scan Code Card -->
+<button class="group relative overflow-hidden bg-primary p-md rounded-3xl text-left h-48 flex flex-col justify-between transition-all hover:shadow-xl active:scale-95 shadow-[0_4px_20px_rgba(70,72,212,0.15)]">
+<div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-bl-full translate-x-8 -translate-y-8 group-hover:scale-110 transition-transform"></div>
+<div class="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+<span class="material-symbols-outlined text-white text-3xl" data-icon="qr_code_scanner">qr_code_scanner</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-primary">Scan Code</h3>
+<p class="font-label-sm text-label-sm text-on-primary/80">Instantly capture any QR or barcode</p>
+</div>
+</button>
+<!-- Create New Card -->
+<button class="group relative overflow-hidden bg-surface-container-high border border-outline-variant p-md rounded-3xl text-left h-48 flex flex-col justify-between transition-all hover:bg-surface-container-highest active:scale-95 shadow-sm">
+<div class="absolute top-0 right-0 p-4">
+<span class="material-symbols-outlined text-primary/20 text-7xl rotate-12 group-hover:rotate-0 transition-transform" data-icon="add_box">add_box</span>
+</div>
+<div class="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="add">add</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Create New</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Generate custom QR for URLs &amp; more</p>
+</div>
+</button>
+</section>
+<!-- Recently Created Section -->
+<section>
+<div class="flex justify-between items-center mb-md">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Recently Created</h2>
+<button class="font-label-md text-label-md text-primary hover:underline">View All</button>
+</div>
+<div class="flex overflow-x-auto gap-md pb-4 no-scrollbar -mx-5 px-5">
+<!-- QR Item 1 -->
+<div class="flex-none w-64 bg-white border border-gray-100 rounded-3xl p-md shadow-[0_4px_20px_rgba(15,23,42,0.05)] group hover:border-primary/30 transition-colors">
+<div class="aspect-square bg-gray-50 rounded-2xl mb-md flex items-center justify-center p-md overflow-hidden relative">
+<div class="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<img alt="QR Code Preview" class="w-32 h-32 relative z-10" data-alt="Digital black and white QR code graphic on a minimalist light gray background tile" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbCTvDZxSA2kCgaIBpe1RTm81QA7jZn2tzf1WTFcMJro4_2lB9brsYLvD64S9wWdBWTQPMi1sOkBvXIDwLckkW73clL1nCu8gE_kSIfnwg4be2rhxkHCX39rTyYxTeWDmkb0dtnK--mhoeVByk63Qt1uHBMduKH3V4lI5NK_uQB7dT5vYAsWvCrVEXxT2QW06ESiwkajWcIe_09u5uDw9h85OUR-ePpNiNxjUNIseQxzUkxzvFIf56bp1UVsVZtc7H70Aii_NvP1rF"/>
+</div>
+<div>
+<div class="flex items-center gap-2 mb-xs">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider">Portfolio Link</span>
+</div>
+<h4 class="font-label-md text-label-md text-on-surface truncate">Personal Website 2024</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Created 2h ago</p>
+</div>
+</div>
+<!-- QR Item 2 -->
+<div class="flex-none w-64 bg-white border border-gray-100 rounded-3xl p-md shadow-[0_4px_20px_rgba(15,23,42,0.05)] group hover:border-primary/30 transition-colors">
+<div class="aspect-square bg-gray-50 rounded-2xl mb-md flex items-center justify-center p-md overflow-hidden relative">
+<div class="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<img alt="QR Code Preview" class="w-32 h-32 relative z-10" data-alt="Digital black and white QR code graphic on a minimalist light gray background tile" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBlyGUjVEgJLfn2ls8SrZEWMhBEr0S4rZ-Knb7UI4FLG5iYDH1un-hAKpk9vOq5VUCyFIKVQSXqGmL0ss2lRjATLX90lE39MY-Yv30qSosggfEFUusRGpmbd4V6lxj3eqLoRRcmMMf_p1dUGqymQkOgkBHBrE86n7wJErSrsSJ6VeBEwh6JtmKy0PfjdJ2hb9WXhIsL-LdlpoJ48lo-EyofyDhi14XCmu31BrgaXy-lGVI7zumuY_ZAadvyqGVTxBIDEExUhkFipuYr"/>
+</div>
+<div>
+<div class="flex items-center gap-2 mb-xs">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span class="font-label-sm text-label-sm text-tertiary uppercase tracking-wider">Wi-Fi Config</span>
+</div>
+<h4 class="font-label-md text-label-md text-on-surface truncate">Guest Network Access</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Created yesterday</p>
+</div>
+</div>
+<!-- QR Item 3 -->
+<div class="flex-none w-64 bg-white border border-gray-100 rounded-3xl p-md shadow-[0_4px_20px_rgba(15,23,42,0.05)] group hover:border-primary/30 transition-colors">
+<div class="aspect-square bg-gray-50 rounded-2xl mb-md flex items-center justify-center p-md overflow-hidden relative">
+<div class="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<img alt="QR Code Preview" class="w-32 h-32 relative z-10" data-alt="Digital black and white QR code graphic on a minimalist light gray background tile" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWPDZffnRYnG9mntlqNM3YRjrtM6LivR9KwpcpnOWsyI2tC9jVVZ_UsNaTwElUh7MwnTB6KnoNBfe6b3sJbsRUD8rmIxblwtIMwUbbRD2WUvVmoSmFxarKjdPgn3LmqnB3TMHyoKOk2Np0hR-MkFaqDUPF2z09qC91D-dbUNPhBO7s5s3HT7jzjA-b9WOkqYK1gEc_2ubQxUWAw7pywEhXzTZpqN51yt7wZBLt61BLsh_5xiK5xzzht-JMMpSXyuJ0hkpEbRoNFPel"/>
+</div>
+<div>
+<div class="flex items-center gap-2 mb-xs">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-label-sm text-label-sm text-primary uppercase tracking-wider">Business Card</span>
+</div>
+<h4 class="font-label-md text-label-md text-on-surface truncate">Digital V-Card</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Created 3 days ago</p>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 bg-white/95 dark:bg-gray-950/95 backdrop-blur-md border-t border-gray-100 dark:border-gray-800 rounded-t-2xl shadow-[0_-4px_20px_rgba(15,23,42,0.05)] transition-colors">
+<div class="flex justify-around items-center h-20 px-4 pb-safe">
+<!-- Dashboard (Active) -->
+<a class="flex flex-col items-center justify-center text-indigo-600 dark:text-indigo-400 scale-105 transition-transform" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="grid_view" style="font-variation-settings: 'FILL' 1;">grid_view</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider">Dashboard</span>
+</a>
+<!-- Scan -->
+<a class="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-95 transition-all duration-200" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="qr_code_scanner">qr_code_scanner</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider">Scan</span>
+</a>
+<!-- Create -->
+<a class="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-95 transition-all duration-200" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="add_box">add_box</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider">Create</span>
+</a>
+<!-- History -->
+<a class="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-indigo-500 dark:hover:text-indigo-300 active:scale-95 transition-all duration-200" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="history">history</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider">History</span>
+</a>
+</div>
+</nav>
+</body></html>
