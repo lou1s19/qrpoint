@@ -19,6 +19,27 @@ export const COLORS = {
   black: '#000000',
 };
 
+export const DARK_COLORS = {
+  primary: '#7b7dff',
+  primaryContainer: '#4648d4',
+  onPrimary: '#ffffff',
+  surface: '#0f0f18',
+  surfaceContainerLowest: '#0a0a12',
+  surfaceContainerLow: '#161622',
+  surfaceContainer: '#1c1c2e',
+  surfaceContainerHigh: '#22223a',
+  surfaceContainerHighest: '#2a2a42',
+  onSurface: '#e8e7ff',
+  onSurfaceVariant: '#aaa8c8',
+  outline: '#6e6c88',
+  outlineVariant: '#3a3850',
+  secondary: '#5bb8e8',
+  tertiary: '#ffb74d',
+  error: '#ff8080',
+  white: '#1c1c2e',
+  black: '#e8e7ff',
+};
+
 export const SPACING = {
   xs: 4,
   sm: 8,

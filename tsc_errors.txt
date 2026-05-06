@@ -1,0 +1,6 @@
+app/(tabs)/create.tsx(743,144): error TS2339: Property 'typeBtnActive' does not exist on type '{ safe: { flex: number; }; header: { paddingHorizontal: number; paddingVertical: number; borderBottomWidth: number; alignItems: "center"; }; headerTitle: { fontSize: number; fontWeight: "600"; lineHeight: number; }; ... 66 more ...; saveBtnText: { ...; }; }'.
+app/(tabs)/create.tsx(744,90): error TS2339: Property 'typeBtnTextActive' does not exist on type '{ safe: { flex: number; }; header: { paddingHorizontal: number; paddingVertical: number; borderBottomWidth: number; alignItems: "center"; }; headerTitle: { fontSize: number; fontWeight: "600"; lineHeight: number; }; ... 66 more ...; saveBtnText: { ...; }; }'.
+app/(tabs)/create.tsx(749,348): error TS2304: Cannot find name 'textContent'.
+app/(tabs)/create.tsx(749,375): error TS2304: Cannot find name 'setTextContent'.
+app/(tabs)/create.tsx(749,405): error TS2304: Cannot find name 'setTextContent'.
+app/(tabs)/create.tsx(749,420): error TS2304: Cannot find name 'textContent'.

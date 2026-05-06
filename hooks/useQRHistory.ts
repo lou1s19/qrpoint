@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { QRHistoryItem } from '@/constants/QRTypes';
+import * as FileSystem from 'expo-file-system';
 
 const STORAGE_KEY = '@qrpoint_history';
 
@@ -35,6 +36,10 @@ export function useQRHistory() {
 
   const deleteItem = useCallback(async (id: string) => {
     setItems(prev => {
+      const itemToDelete = prev.find(i => i.id === id);
+      if (itemToDelete?.localImagePath) {
+        FileSystem.deleteAsync(itemToDelete.localImagePath, { idempotent: true }).catch(() => {});
+      }
       const next = prev.filter(i => i.id !== id);
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       return next;

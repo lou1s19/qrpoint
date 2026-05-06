@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,184 +6,412 @@ import {
   ScrollView,
   TextInput,
   Pressable,
-  SafeAreaView,
   StatusBar,
   Alert,
   Platform,
   ActivityIndicator,
   Switch,
+  KeyboardAvoidingView,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
+import { Image, Modal } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
 import { MaterialIcons } from '@expo/vector-icons';
-import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from '@/constants/Theme';
+import ColorPicker, { Panel1, Swatches, Preview, OpacitySlider, HueSlider } from 'reanimated-color-picker';
+import { SPACING, RADIUS, TYPOGRAPHY } from '@/constants/Theme';
+import { useTheme } from '@/context/ThemeContext';
+import { SPRITE_COORDINATES } from '@/constants/SpriteCoordinates';
 import {
   QRType,
   DotsStyle,
   CornerSquareStyle,
+  CornerDotStyle,
   QRCodeConfig,
   DEFAULT_QR_CONFIG,
   QR_TYPE_LABELS,
   buildQRContent,
+  isLikelyWebUrl,
+  normalizeWebUrlContent,
 } from '@/constants/QRTypes';
 import { useQRHistory } from '@/hooks/useQRHistory';
 
-const QR_HTML = `<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100%; height: 100%;
-    display: flex; align-items: center; justify-content: center;
-    background: transparent;
-    overflow: hidden;
-  }
-  #container canvas, #container svg { display: block; max-width: 100%; max-height: 100%; }
-</style>
-</head>
-<body>
-<div id="container"></div>
-<script src="https://unpkg.com/qr-code-styling@1.6.0-rc.1/lib/qr-code-styling.js"></script>
-<script>
-var qrCode = null;
-var pendingConfig = null;
-
-function getOpts(cfg) {
-  return {
-    width: 260, height: 260,
-    data: cfg.data || 'https://example.com',
-    image: cfg.logo || undefined,
-    margin: 8,
-    dotsOptions: { color: cfg.fgColor || '#4648d4', type: cfg.dotsStyle || 'square' },
-    cornersSquareOptions: { type: cfg.cornerSquareStyle || 'extra-rounded', color: cfg.fgColor || '#4648d4' },
-    cornersDotOptions: { type: cfg.cornerDotStyle || 'dot', color: cfg.fgColor || '#4648d4' },
-    backgroundOptions: { color: cfg.bgColor || '#ffffff' },
-    imageOptions: { crossOrigin: 'anonymous', margin: cfg.logoMargin || 5, imageSize: cfg.logoSize || 0.3 },
-    qrOptions: { errorCorrectionLevel: 'H' }
-  };
-}
-
-function initQR(cfg) {
-  var c = document.getElementById('container');
-  c.innerHTML = '';
-  try {
-    qrCode = new QRCodeStyling(getOpts(cfg));
-    qrCode.append(c);
-  } catch(e) { c.innerHTML = '<p style="color:red;font-size:12px">Error: ' + e.message + '</p>'; }
-}
-
-function updateQR(cfg) {
-  if (!qrCode) { initQR(cfg); return; }
-  try { qrCode.update(getOpts(cfg)); } catch(e) { initQR(cfg); }
-}
-
-async function exportQR(fmt) {
-  if (!qrCode) return;
-  try {
-    var blob = await qrCode.getRawData(fmt);
-    var r = new FileReader();
-    r.onload = function() {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'export', data: r.result, format: fmt }));
-    };
-    r.readAsDataURL(blob);
-  } catch(e) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: e.message }));
-  }
-}
-
-function handleMsg(e) {
-  try {
-    var msg = JSON.parse(e.data);
-    if (msg.type === 'update') updateQR(msg.config);
-    if (msg.type === 'export') exportQR(msg.format || 'png');
-  } catch(ex) {}
-}
-
-document.addEventListener('message', handleMsg);
-window.addEventListener('message', handleMsg);
-
-window.onload = function() {
-  initQR({ data: 'https://example.com', fgColor: '#4648d4', bgColor: '#ffffff' });
-  window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
-};
-</script>
-</body>
-</html>`;
-
 type TabId = 'content' | 'design' | 'colors' | 'logo';
+type QRSizePreset = 'small' | 'medium' | 'large' | 'custom';
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'content', label: 'Inhalt' },
+type ExtendedQRConfig = QRCodeConfig & { logoRadius?: number };
+
+const CENTER_LOGO_SIZE = 0.15;
+
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'content', label: 'Content' },
   { id: 'design', label: 'Design' },
-  { id: 'colors', label: 'Farben' },
+  { id: 'colors', label: 'Colors' },
   { id: 'logo', label: 'Logo' },
 ];
 
-const DOT_STYLES: { value: DotsStyle; label: string; shape: 'circle' | 'square' | 'diamond' | 'rounded' | 'classy' | 'extra' }[] = [
-  { value: 'square', label: 'Quadrat', shape: 'square' },
-  { value: 'dots', label: 'Punkte', shape: 'circle' },
-  { value: 'rounded', label: 'Rund', shape: 'rounded' },
-  { value: 'classy', label: 'Classy', shape: 'classy' },
-  { value: 'extra-rounded', label: 'Weich', shape: 'extra' },
+const DOT_STYLES: Array<{ value: DotsStyle; label: string }> = [
+  { value: 'square', label: 'Square' }, { value: 'mosaic', label: 'Mosaic' }, { value: 'dot', label: 'Dot' }, { value: 'circle', label: 'Circle' }, { value: 'circle-zebra', label: 'Circle Zebra' }, { value: 'circle-zebra-vertical', label: 'Circle Zebra Vertical' }, { value: 'circular', label: 'Circular' }, { value: 'edge-cut', label: 'Edge Cut' }, { value: 'edge-cut-smooth', label: 'Edge Cut Smooth' }, { value: 'japnese', label: 'Japnese' }, { value: 'leaf', label: 'Leaf' }, { value: 'pointed', label: 'Pointed' }, { value: 'pointed-edge-cut', label: 'Pointed Edge Cut' }, { value: 'pointed-in', label: 'Pointed In' }, { value: 'pointed-in-smooth', label: 'Pointed In Smooth' }, { value: 'pointed-smooth', label: 'Pointed Smooth' }, { value: 'round', label: 'Round' }, { value: 'rounded-in', label: 'Rounded In' }, { value: 'rounded-in-smooth', label: 'Rounded In Smooth' }, { value: 'rounded-pointed', label: 'Rounded Pointed' }, { value: 'star', label: 'Star' }, { value: 'diamond', label: 'Diamond' }
 ];
 
-const CORNER_STYLES: { value: CornerSquareStyle; label: string }[] = [
-  { value: 'square', label: 'Eckig' },
-  { value: 'extra-rounded', label: 'Rund' },
-  { value: 'dot', label: 'Punkt' },
-];
+const CORNER_STYLES: Array<{ value: CornerSquareStyle; label: string }> = Array.from({length: 17}, (_, i) => ({ value: `frame${i}` as CornerSquareStyle, label: `Frame ${i}` }));
+const BALL_STYLES: Array<{ value: CornerDotStyle; label: string }> = Array.from({length: 20}, (_, i) => ({ value: `ball${i}` as CornerDotStyle, label: `Ball ${i}` }));
 
-const QR_TYPES: QRType[] = ['url', 'wifi', 'vcard', 'text', 'email', 'phone', 'sms'];
+const QR_TYPES: QRType[] = ['url', 'text', 'email', 'phone', 'sms', 'vcard', 'mecard', 'location', 'facebook', 'twitter', 'youtube', 'event', 'crypto', 'wifi'];
+const PRESET_FG = ['#4648d4', '#000000', '#1a1a2e', '#e63946', '#2d6a4f', '#f77f00', '#7b2d8b', '#0077b6', '#333333', '#c77dff'];
+const PRESET_BG = ['#ffffff', '#faf8ff', '#f0f0f0', '#e8f4fd', '#fff3e0', '#fce4ec', '#f3e5f5', '#e8f5e9', '#fffde7', '#000000'];
 
-const PRESET_COLORS = [
-  '#4648d4', '#000000', '#1a1a2e', '#e63946', '#2d6a4f',
-  '#f77f00', '#7b2d8b', '#0077b6', '#333333', '#c77dff',
-];
 
-function DotStyleIcon({ shape }: { shape: DotsStyle }) {
-  const s = { width: 14, height: 14, backgroundColor: COLORS.onSurface };
-  if (shape === 'dots') return <View style={[s, { borderRadius: 7 }]} />;
-  if (shape === 'rounded') return <View style={[s, { borderRadius: 3 }]} />;
-  if (shape === 'classy') return <View style={[s, { borderRadius: 2, transform: [{ rotate: '45deg' }] }]} />;
-  if (shape === 'extra-rounded') return <View style={[s, { borderRadius: 5 }]} />;
-  return <View style={s} />;
+function SpriteIcon({ shape, type, color, active }: { shape: string, type: 'body' | 'frame' | 'ball', color: string, active: boolean }) {
+  const coords = SPRITE_COORDINATES[shape];
+  if (!coords) return null;
+  
+  const source = require('@/assets/images/sprite-shapes-alpha.png');
+    
+  // The original images have black shapes. We can't tint PNG easily in RN without tintColor which works for solid colors with alpha.
+  // RN Image tintColor replaces all non-transparent pixels with the color. That's perfect for our sprites!
+  
+  // The scale for body is 0.5 (90->45, 80->40). The frames/balls are 50x50.
+  const scale = type === 'body' ? 0.5 : 0.8;
+  const viewWidth = coords.w * scale;
+  const viewHeight = coords.h * scale;
+
+  return (
+    <View style={{ width: viewWidth, height: viewHeight, overflow: 'hidden', alignItems: 'flex-start', justifyContent: 'flex-start', marginBottom: 4 }}>
+      <Image 
+        source={source} 
+        style={{
+          width: type === 'body' ? 680 * scale : 550 * scale,
+          height: type === 'body' ? 630 * scale : 660 * scale,
+          marginLeft: coords.x * scale,
+          marginTop: coords.y * scale,
+          tintColor: color
+        }}
+        resizeMode="stretch"
+      />
+    </View>
+  );
 }
 
-function ColorSwatch({
-  color, selected, onPress,
-}: {
-  color: string; selected: boolean; onPress: () => void;
-}) {
+function isHexColor(value: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(value.trim());
+}
+
+function normalizeHex(value: string) {
+  const trimmed = value.trim();
+  return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+}
+
+function hexToRgb(hex: string) {
+  const clean = normalizeHex(hex).replace('#', '');
+  return {
+    r: parseInt(clean.slice(0, 2), 16),
+    g: parseInt(clean.slice(2, 4), 16),
+    b: parseInt(clean.slice(4, 6), 16),
+  };
+}
+
+function relativeLuminance(hex: string) {
+  const { r, g, b } = hexToRgb(hex);
+  const convert = (channel: number) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * convert(r) + 0.7152 * convert(g) + 0.0722 * convert(b);
+}
+
+function contrastRatio(fg: string, bg: string) {
+  const first = relativeLuminance(fg);
+  const second = relativeLuminance(bg);
+  const lighter = Math.max(first, second);
+  const darker = Math.min(first, second);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100;
+  l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function hexToHsl(hex: string) {
+  const safeHex = isHexColor(normalizeHex(hex)) ? normalizeHex(hex) : '#4648d4';
+  const { r, g, b } = hexToRgb(safeHex);
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === rn) h = (gn - bn) / d + (gn < bn ? 6 : 0);
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h /= 6;
+  }
+
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
+function ColorSwatch({ color, selected, onPress, C }: { color: string; selected: boolean; onPress: () => void; C: any }) {
   return (
     <Pressable
       onPress={onPress}
-      style={[
-        styles.swatch,
-        { backgroundColor: color },
-        selected && styles.swatchSelected,
-      ]}
+      style={[styles.swatch, { backgroundColor: color, borderColor: selected ? C.primary : C.outlineVariant }, selected && { transform: [{ scale: 1.08 }] }]}
     >
-      {selected && <MaterialIcons name="check" size={14} color={color === '#ffffff' ? '#000' : '#fff'} />}
+      {selected && <MaterialIcons name="check" size={14} color={color.toLowerCase() === '#ffffff' ? '#000' : '#fff'} />}
     </Pressable>
   );
 }
 
+function ColorPickerBlock({
+  title,
+  value,
+  palette,
+  onChange,
+  C,
+}: {
+  title: string;
+  value: string;
+  palette: string[];
+  onChange: (hex: string) => void;
+  C: any;
+}) {
+  const [hexDraft, setHexDraft] = useState(value.toUpperCase());
+
+  useEffect(() => {
+    setHexDraft(value.toUpperCase());
+  }, [value]);
+
+  const [showPicker, setShowPicker] = useState(false);
+
+  return (
+    <View style={[styles.colorPanel, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }]}>
+      <View style={styles.colorPanelHeader}>
+        <View style={[styles.colorDot, { backgroundColor: value, borderColor: C.outlineVariant }]} />
+        <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0, flex: 1 }]}>{title}</Text>
+        <TextInput
+          style={[styles.compactHexInput, { color: C.onSurface, borderColor: isHexColor(normalizeHex(hexDraft)) ? C.outlineVariant : C.error, backgroundColor: C.surfaceContainerLowest }]}
+          value={hexDraft}
+          onChangeText={next => {
+            const normalized = next.startsWith('#') ? next : `#${next}`;
+            setHexDraft(normalized.toUpperCase());
+            if (isHexColor(normalized)) onChange(normalized.toUpperCase());
+          }}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={7}
+        />
+      </View>
+      <View style={styles.compactColorRow}>
+        {palette.slice(0, 7).map(color => (
+          <ColorSwatch key={color} C={C} color={color} selected={value.toLowerCase() === color.toLowerCase()} onPress={() => onChange(color)} />
+        ))}
+        <Pressable style={[styles.swatch, { backgroundColor: C.surfaceContainerHigh, borderColor: C.outlineVariant, justifyContent: 'center', alignItems: 'center' }]} onPress={() => setShowPicker(true)}>
+          <MaterialIcons name="colorize" size={16} color={C.onSurfaceVariant} />
+        </Pressable>
+      </View>
+      
+      <Modal visible={showPicker} transparent={true} animationType="fade" onRequestClose={() => setShowPicker(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ width: '85%', backgroundColor: C.surface, borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 }}>
+            <Text style={[styles.fieldLabel, { color: C.onSurface, marginBottom: 16, textAlign: 'center' }]}>CHOOSE {title}</Text>
+            
+            <ColorPicker
+              value={value}
+              onComplete={({ hex }) => {
+                onChange(hex.toUpperCase());
+                setHexDraft(hex.toUpperCase());
+              }}
+              style={{ width: '100%', gap: 20 }}
+            >
+              <Panel1 />
+              <HueSlider />
+            </ColorPicker>
+            
+            <Pressable style={[styles.saveBtn, { backgroundColor: C.primary, marginTop: 24 }]} onPress={() => setShowPicker(false)}>
+              <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+function ValueSlider({
+  label,
+  value,
+  min = 0,
+  max,
+  suffix = '',
+  onChange,
+  background,
+  C,
+}: {
+  label: string;
+  value: number;
+  min?: number;
+  max: number;
+  suffix?: string;
+  onChange: (value: number) => void;
+  background?: React.ReactNode;
+  C: any;
+}) {
+  const trackRef = useRef<View>(null);
+  const widthRef = useRef(1);
+  const pageXRef = useRef(0);
+  const [width, setWidth] = useState(1);
+  const [pageX, setPageX] = useState(0);
+  const progress = (value - min) / (max - min);
+
+  const measure = () => {
+    trackRef.current?.measureInWindow((x, _y, w) => {
+      pageXRef.current = x;
+      widthRef.current = Math.max(1, w);
+      setPageX(x);
+      setWidth(Math.max(1, w));
+    });
+  };
+
+  const updateWithMeasuredTrack = (x: number) => {
+    trackRef.current?.measureInWindow((trackX, _y, trackWidth) => {
+      const safeWidth = Math.max(1, trackWidth);
+      pageXRef.current = trackX;
+      widthRef.current = safeWidth;
+      setPageX(trackX);
+      setWidth(safeWidth);
+      const nextProgress = Math.max(0, Math.min(1, (x - trackX) / safeWidth));
+      onChange(Math.round(min + nextProgress * (max - min)));
+    });
+  };
+
+  const updateFromPageX = (x: number) => {
+    const origin = pageXRef.current || pageX;
+    const trackWidth = widthRef.current || width;
+    const nextProgress = Math.max(0, Math.min(1, (x - origin) / trackWidth));
+    onChange(Math.round(min + nextProgress * (max - min)));
+  };
+
+  return (
+    <View style={{ gap: SPACING.xs }}>
+      <View style={styles.sliderLabelRow}>
+        <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>{label}</Text>
+        <Text style={[styles.sliderValue, { color: C.onSurfaceVariant }]}>{value}{suffix}</Text>
+      </View>
+      <View
+        ref={trackRef}
+        onLayout={measure}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={event => updateWithMeasuredTrack(event.nativeEvent.pageX)}
+        onResponderMove={event => updateFromPageX(event.nativeEvent.pageX)}
+        style={[styles.sliderTrack, { backgroundColor: C.surfaceContainerHigh }]}
+      >
+        {background ?? <View style={[StyleSheet.absoluteFillObject, { backgroundColor: C.primary, opacity: 0.25 }]} />}
+        <View style={[styles.sliderProgress, { width: `${progress * 100}%`, backgroundColor: C.primary }]} />
+        <View style={[styles.sliderThumb, { left: `${progress * 100}%`, borderColor: C.primary }]} />
+      </View>
+    </View>
+  );
+}
+
+function HSLColorEditor({ value, onChange, C }: { value: string; onChange: (hex: string) => void; C: any }) {
+  const hsl = useMemo(() => hexToHsl(value), [value]);
+  const [hue, setHue] = useState(hsl.h);
+  const [sat, setSat] = useState(hsl.s);
+  const [light, setLight] = useState(hsl.l);
+  const [hexDraft, setHexDraft] = useState(value.toUpperCase());
+
+  useEffect(() => {
+    const next = hexToHsl(value);
+    setHue(next.h);
+    setSat(next.s);
+    setLight(next.l);
+    setHexDraft(value.toUpperCase());
+  }, [value]);
+
+  const commitHsl = (nextHue = hue, nextSat = sat, nextLight = light) => onChange(hslToHex(nextHue, nextSat, nextLight));
+  const hexValid = isHexColor(normalizeHex(hexDraft));
+
+  return (
+    <View style={{ gap: SPACING.md }}>
+      <ValueSlider
+        C={C}
+        label="HUE"
+        value={hue}
+        max={360}
+        suffix="°"
+        onChange={h => { setHue(h); commitHsl(h, sat, light); }}
+        background={<View style={[StyleSheet.absoluteFillObject, styles.sliderFillRow]}>{Array.from({ length: 36 }).map((_, i) => <View key={i} style={{ flex: 1, backgroundColor: `hsl(${i * 10}, 100%, 50%)` }} />)}</View>}
+      />
+      <ValueSlider
+        C={C}
+        label="SATURATION"
+        value={sat}
+        max={100}
+        suffix="%"
+        onChange={s => { setSat(s); commitHsl(hue, s, light); }}
+        background={<View style={[StyleSheet.absoluteFillObject, styles.sliderFillRow]}><View style={{ flex: 1, backgroundColor: hslToHex(hue, 0, light) }} /><View style={{ flex: 1, backgroundColor: hslToHex(hue, 100, light) }} /></View>}
+      />
+      <ValueSlider
+        C={C}
+        label="LIGHTNESS"
+        value={light}
+        max={100}
+        suffix="%"
+        onChange={l => { setLight(l); commitHsl(hue, sat, l); }}
+        background={<View style={[StyleSheet.absoluteFillObject, styles.sliderFillRow]}><View style={{ flex: 1, backgroundColor: '#000' }} /><View style={{ flex: 1, backgroundColor: hslToHex(hue, sat, 50) }} /><View style={{ flex: 1, backgroundColor: '#fff' }} /></View>}
+      />
+      <View style={styles.hexRow}>
+        <View style={[styles.colorDot, { backgroundColor: hexValid ? normalizeHex(hexDraft) : value, borderColor: C.outlineVariant }]} />
+        <TextInput
+          style={[styles.hexInput, { color: C.onSurface, borderColor: hexValid ? C.outlineVariant : C.error, backgroundColor: C.surfaceContainerLowest }]}
+          value={hexDraft}
+          onChangeText={next => {
+            const normalized = next.startsWith('#') ? next : `#${next}`;
+            setHexDraft(normalized.toUpperCase());
+            if (isHexColor(normalized)) onChange(normalized.toUpperCase());
+          }}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={7}
+        />
+      </View>
+    </View>
+  );
+}
+
 export default function CreateScreen() {
-  const webRef = useRef<WebView>(null);
+  const { colors: C, isDark } = useTheme();
   const { addItem } = useQRHistory();
 
   const [activeTab, setActiveTab] = useState<TabId>('content');
   const [qrType, setQrType] = useState<QRType>('url');
-  const [config, setConfig] = useState<QRCodeConfig>(DEFAULT_QR_CONFIG);
-  const [webviewReady, setWebviewReady] = useState(false);
+  const [config, setConfig] = useState<ExtendedQRConfig>({ ...DEFAULT_QR_CONFIG, logoRadius: 0, logoMargin: 0 });
   const [exporting, setExporting] = useState(false);
+  const [moduleStylesExpanded, setModuleStylesExpanded] = useState(false);
+  const [cornerStylesExpanded, setCornerStylesExpanded] = useState(false);
+  const [ballStylesExpanded, setBallStylesExpanded] = useState(false);
+  const [qrSizePreset, setQrSizePreset] = useState<QRSizePreset>('medium');
+  const lastClipboardPrompt = useRef<string | null>(null);
+  const clipboardPromptShown = useRef(false);
 
-  // Content fields
-  const [urlValue, setUrlValue] = useState('https://');
+  const [urlValue, setUrlValue] = useState('');
   const [textValue, setTextValue] = useState('');
   const [wifiSSID, setWifiSSID] = useState('');
   const [wifiPass, setWifiPass] = useState('');
@@ -193,121 +421,264 @@ export default function CreateScreen() {
   const [vcPhone, setVcPhone] = useState('');
   const [vcEmail, setVcEmail] = useState('');
   const [vcCompany, setVcCompany] = useState('');
+
+  const [mcName, setMcName] = useState('');
+  const [mcPhone, setMcPhone] = useState('');
+  const [mcEmail, setMcEmail] = useState('');
+  const [mcUrl, setMcUrl] = useState('');
+  const [mcAddress, setMcAddress] = useState('');
+
+  const [locLat, setLocLat] = useState('');
+  const [locLng, setLocLng] = useState('');
+
+  const [evTitle, setEvTitle] = useState('');
+  const [evLocation, setEvLocation] = useState('');
+  const [evDesc, setEvDesc] = useState('');
+  const [evStart, setEvStart] = useState('');
+  const [evEnd, setEvEnd] = useState('');
+
+  const [cryptoCurrency, setCryptoCurrency] = useState<'bitcoin'|'ethereum'|'litecoin'>('bitcoin');
+  const [cryptoAddress, setCryptoAddress] = useState('');
+  const [cryptoAmount, setCryptoAmount] = useState('');
+  const [vcWebsite, setVcWebsite] = useState('');
   const [emailTo, setEmailTo] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
   const [phoneNum, setPhoneNum] = useState('');
   const [smsNum, setSmsNum] = useState('');
   const [smsMsg, setSmsMsg] = useState('');
-  const [customTitle, setCustomTitle] = useState('');
 
-  function getContentData(): Record<string, string> {
+  const setUrlDraft = useCallback((value: string) => {
+    setUrlValue(normalizeWebUrlContent(value));
+  }, []);
+
+  const setWebsiteDraft = useCallback((value: string) => {
+    setVcWebsite(normalizeWebUrlContent(value));
+  }, []);
+
+  const contentData = useMemo((): Record<string, string> => {
     switch (qrType) {
       case 'url': return { url: urlValue };
       case 'text': return { text: textValue };
       case 'wifi': return { ssid: wifiSSID, password: wifiPass, encryption: wifiEnc };
-      case 'vcard': return { firstName: vcFirstName, lastName: vcLastName, phone: vcPhone, email: vcEmail, company: vcCompany };
-      case 'email': return { email: emailTo };
+      case 'vcard': return { firstName: vcFirstName, lastName: vcLastName, phone: vcPhone, email: vcEmail, company: vcCompany, website: vcWebsite };
+      case 'email': return { email: emailTo, subject: emailSubject };
       case 'phone': return { phone: phoneNum };
       case 'sms': return { phone: smsNum, message: smsMsg };
       default: return {};
     }
-  }
+  }, [qrType, urlValue, textValue, wifiSSID, wifiPass, wifiEnc, vcFirstName, vcLastName, vcPhone, vcEmail, vcCompany, vcWebsite, emailTo, emailSubject, phoneNum, smsNum, smsMsg]);
 
-  function getCurrentContent(): string {
-    return buildQRContent(qrType, getContentData());
-  }
-
-  function getAutoTitle(): string {
-    if (customTitle) return customTitle;
+  const currentContent = useMemo(() => buildQRContent(qrType, contentData), [qrType, contentData]);
+  const effectiveBg = config.transparentBg ? '#ffffff' : config.bgColor;
+  const contrast = useMemo(() => contrastRatio(config.fgColor, effectiveBg), [config.fgColor, effectiveBg]);
+  const hasContrastWarning = contrast < 3;
+  const hasQuietZoneWarning = config.margin < 24;
+  const visibleDotStyles = moduleStylesExpanded ? DOT_STYLES : DOT_STYLES.slice(0, 3);
+  const visibleCornerStyles = cornerStylesExpanded ? CORNER_STYLES : CORNER_STYLES.slice(0, 3);
+  const visibleBallStyles = ballStylesExpanded ? BALL_STYLES : BALL_STYLES.slice(0, 3);
+  const autoTitle = useMemo(() => {
     switch (qrType) {
       case 'url': return urlValue.replace(/^https?:\/\//, '').split('/')[0] || 'URL QR';
       case 'wifi': return wifiSSID || 'Wi-Fi QR';
-      case 'vcard': return [vcFirstName, vcLastName].filter(Boolean).join(' ') || 'Kontakt QR';
+      case 'vcard': return [vcFirstName, vcLastName].filter(Boolean).join(' ') || 'Contact QR';
       case 'text': return textValue.slice(0, 30) || 'Text QR';
       case 'email': return emailTo || 'E-Mail QR';
-      case 'phone': return phoneNum || 'Telefon QR';
+      case 'phone': return phoneNum || 'Phone QR';
       case 'sms': return smsNum || 'SMS QR';
       default: return 'QR Code';
     }
-  }
+  }, [qrType, urlValue, wifiSSID, vcFirstName, vcLastName, textValue, emailTo, phoneNum, smsNum]);
 
-  const sendUpdate = useCallback((cfg: QRCodeConfig, content?: string) => {
-    if (!webviewReady || !webRef.current) return;
-    const data = content ?? getCurrentContent();
-    const msg = JSON.stringify({
-      type: 'update',
-      config: {
+  const [previewBase64, setPreviewBase64] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const fetchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchQRCode = useCallback(async (nextConfig: ExtendedQRConfig, data: string) => {
+    try {
+      setPreviewLoading(true);
+      const payload = {
         data: data || 'https://example.com',
-        fgColor: cfg.fgColor,
-        bgColor: cfg.bgColor,
-        dotsStyle: cfg.dotsStyle,
-        cornerSquareStyle: cfg.cornerSquareStyle,
-        cornerDotStyle: cfg.cornerDotStyle,
-        logo: cfg.logo,
-        logoSize: cfg.logoSize,
-        logoMargin: cfg.logoMargin,
-      },
-    });
-    webRef.current.postMessage(msg);
-  }, [webviewReady]);
+        config: {
+          body: nextConfig.dotsStyle,
+          eye: nextConfig.cornerSquareStyle,
+          eyeBall: nextConfig.cornerDotStyle,
+          bodyColor: nextConfig.fgColor,
+          bgColor: nextConfig.transparentBg ? '#FFFFFF' : nextConfig.bgColor,
+          eye1Color: nextConfig.fgColor,
+          eye2Color: nextConfig.fgColor,
+          eye3Color: nextConfig.fgColor,
+          eyeBall1Color: nextConfig.fgColor,
+          eyeBall2Color: nextConfig.fgColor,
+          eyeBall3Color: nextConfig.fgColor,
+          logo: nextConfig.logo || ''
+        },
+        size: 1024,
+        download: false,
+        file: 'png'
+      };
 
-  function updateConfig(partial: Partial<QRCodeConfig>) {
-    const next = { ...config, ...partial };
-    setConfig(next);
-    sendUpdate(next);
-  }
-
-  function handleWebMessage(event: { nativeEvent: { data: string } }) {
-    try {
-      const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.type === 'ready') {
-        setWebviewReady(true);
-        sendUpdate(config, getCurrentContent());
-      }
-      if (msg.type === 'export' && msg.data) {
-        handleExportData(msg.data);
-      }
-    } catch {}
-  }
-
-  async function handleExportData(base64: string) {
-    setExporting(false);
-    try {
-      const filename = `qr-${Date.now()}.png`;
-      const path = `${FileSystem.documentDirectory}${filename}`;
-      const b64 = base64.replace(/^data:image\/png;base64,/, '');
-      await FileSystem.writeAsStringAsync(path, b64, {
-        encoding: FileSystem.EncodingType.Base64,
+      const res = await fetch('https://api.qrcode-monkey.com/qr/custom', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Origin': 'https://www.qrcode-monkey.com',
+          'Referer': 'https://www.qrcode-monkey.com/'
+        },
+        body: JSON.stringify(payload)
       });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(path, { mimeType: 'image/png' });
-      } else {
-        Alert.alert('Exportiert', `Gespeichert: ${filename}`);
-      }
-    } catch (e: any) {
-      Alert.alert('Fehler', e.message);
+      const blob = await res.blob();
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        setPreviewBase64(result);
+        setPreviewLoading(false);
+      };
+      reader.readAsDataURL(blob);
+    } catch (err) {
+      setPreviewLoading(false);
     }
+  }, []);
+
+  function sendQRUpdate(nextConfig: ExtendedQRConfig, data = currentContent) {
+    if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
+    fetchTimeout.current = setTimeout(() => {
+      fetchQRCode(nextConfig, data);
+    }, 400);
   }
+
+  function updateConfig(partial: Partial<ExtendedQRConfig>) {
+    setConfig(prev => {
+      const next = { ...prev, ...partial };
+      sendQRUpdate(next);
+      return next;
+    });
+  }
+
+  function setQRSizePreset(nextPreset: QRSizePreset) {
+    setQrSizePreset(nextPreset);
+    if (nextPreset === 'small') updateConfig({ qrSize: 512 });
+    if (nextPreset === 'medium') updateConfig({ qrSize: 1024 });
+    if (nextPreset === 'large') updateConfig({ qrSize: 2048 });
+  }
+
+  useEffect(() => {
+    sendQRUpdate(config, currentContent);
+  }, [currentContent, config]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      async function offerClipboardUrl() {
+        try {
+          const text = await Clipboard.getStringAsync();
+          const normalized = normalizeWebUrlContent(text);
+          if (cancelled || clipboardPromptShown.current || !isLikelyWebUrl(normalized) || normalized === urlValue || normalized === lastClipboardPrompt.current) return;
+
+          lastClipboardPrompt.current = normalized;
+          clipboardPromptShown.current = true;
+          Alert.alert('Paste URL?', `Use this link from your clipboard?\n\n${normalized}`, [
+            { text: 'No', style: 'cancel' },
+            {
+              text: 'Paste',
+              onPress: () => {
+                setQrType('url');
+                setActiveTab('content');
+                setUrlValue(normalized);
+              },
+            },
+          ]);
+        } catch {
+          // Clipboard access can be unavailable on some platforms.
+        }
+      }
+
+      offerClipboardUrl();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   async function handleSaveAndExport() {
-    const content = getCurrentContent();
-    if (!content || content.trim() === 'https://') {
-      Alert.alert('Hinweis', 'Bitte gib Inhalt für den QR-Code ein.');
+    if (!currentContent) {
+      Alert.alert('Heads up', 'Please enter content for the QR code.');
       return;
     }
-    // Save to history
-    await addItem({
-      id: `qr-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      title: getAutoTitle(),
-      type: qrType,
-      content,
-      createdAt: Date.now(),
-      isScanned: false,
-      config,
-    });
-    // Export
     setExporting(true);
-    webRef.current?.postMessage(JSON.stringify({ type: 'export', format: 'png' }));
-    Alert.alert('Gespeichert!', 'Der QR-Code wurde im Verlauf gespeichert und wird exportiert.');
+    try {
+      // Re-fetch at requested size
+      const payload = {
+        data: currentContent,
+        config: {
+          body: config.dotsStyle,
+          eye: config.cornerSquareStyle,
+          eyeBall: config.cornerDotStyle,
+          bodyColor: config.fgColor,
+          bgColor: config.transparentBg ? '#FFFFFF' : config.bgColor,
+          eye1Color: config.fgColor,
+          eye2Color: config.fgColor,
+          eye3Color: config.fgColor,
+          eyeBall1Color: config.fgColor,
+          eyeBall2Color: config.fgColor,
+          eyeBall3Color: config.fgColor,
+          logo: config.logo || ''
+        },
+        size: config.qrSize,
+        download: false,
+        file: 'png'
+      };
+
+      const res = await fetch('https://api.qrcode-monkey.com/qr/custom', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Origin': 'https://www.qrcode-monkey.com',
+          'Referer': 'https://www.qrcode-monkey.com/'
+        },
+        body: JSON.stringify(payload)
+      });
+      const blob = await res.blob();
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          const filename = `qr-${Date.now()}.png`;
+          const path = `${FileSystem.documentDirectory}${filename}`;
+          await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
+          
+          await addItem({
+            id: `qr-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            title: autoTitle,
+            type: qrType,
+            content: currentContent,
+            createdAt: Date.now(),
+            isScanned: false,
+            config,
+            localImagePath: path
+          });
+
+          const permission = await MediaLibrary.requestPermissionsAsync();
+          if (permission.granted) {
+            await MediaLibrary.saveToLibraryAsync(path);
+            Alert.alert('Saved', 'The QR code was saved to your history and photos.');
+          } else {
+            Alert.alert('Saved to History', 'The QR code was saved to your history. Permission needed to save to photos.');
+          }
+          setExporting(false);
+        } catch (err: any) {
+          Alert.alert('Error', err.message ?? 'Failed to save the QR code.');
+          setExporting(false);
+        }
+      };
+      reader.readAsDataURL(blob);
+    } catch (err: any) {
+      Alert.alert('Error', err.message ?? 'The QR code could not be exported.');
+      setExporting(false);
+    }
   }
 
   async function pickLogo() {
@@ -319,567 +690,235 @@ export default function CreateScreen() {
       base64: true,
     });
     if (!result.canceled && result.assets[0].base64) {
-      const logo = `data:image/jpeg;base64,${result.assets[0].base64}`;
-      updateConfig({ logo });
+      const asset = result.assets[0];
+      const mimeType = asset.mimeType ?? (asset.uri.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+      updateConfig({
+        logo: `data:${mimeType};base64,${asset.base64}`,
+      });
     }
   }
 
-  function removeLogo() {
-    updateConfig({ logo: undefined });
-  }
-
-  function handleContentChange(value: string, setter: (v: string) => void) {
-    setter(value);
-    // Debounce handled by setTimeout approach
-    setTimeout(() => {
-      if (!webviewReady) return;
-      const data = buildQRContent(qrType, getContentData());
-      webRef.current?.postMessage(JSON.stringify({
-        type: 'update',
-        config: {
-          ...config,
-          data: data || 'https://example.com',
-        },
-      }));
-    }, 300);
-  }
+  const inputStyle = { color: C.onSurface, borderColor: C.outlineVariant, backgroundColor: C.surfaceContainerLowest };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>QR-Code erstellen</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: C.surface }]} edges={['top']}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.surface} />
+      <View style={[styles.header, { backgroundColor: C.white, borderBottomColor: C.outlineVariant }]}>
+        <Text style={[styles.headerTitle, { color: C.onSurface }]}>Create QR Code</Text>
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {/* QR Preview */}
+      <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={86}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: 16 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
+      >
         <View style={styles.previewSection}>
-          <View style={styles.previewWrapper}>
-            <View style={styles.cornerTL} />
-            <View style={styles.cornerTR} />
-            <View style={styles.cornerBL} />
-            <View style={styles.cornerBR} />
-            {!webviewReady && (
-              <View style={styles.previewLoader}>
-                <ActivityIndicator color={COLORS.primary} size="large" />
-                <Text style={styles.loadingText}>Lade Editor…</Text>
-              </View>
-            )}
-            <WebView
-              ref={webRef}
-              source={{ html: QR_HTML }}
-              style={styles.webview}
-              onMessage={handleWebMessage}
-              scrollEnabled={false}
-              bounces={false}
-              javaScriptEnabled
-              originWhitelist={['*']}
-              mixedContentMode="always"
-              allowFileAccess
-            />
+          <View style={[styles.previewWrapper, { backgroundColor: C.white, borderColor: C.outlineVariant, shadowColor: C.black }]}> 
+            {previewLoading && <View style={[styles.previewLoader, { backgroundColor: C.white }]}><ActivityIndicator color={C.primary} size="large" /><Text style={[styles.loadingText, { color: C.outline }]}>Loading preview...</Text></View>}
+            {previewBase64 && <Image source={{ uri: previewBase64 }} style={styles.webview} resizeMode="contain" />}
+
           </View>
-          <Text style={styles.previewLabel}>Live-Vorschau</Text>
+          <Text style={[styles.previewLabel, { color: C.onSurfaceVariant }]}>Live Preview</Text>
+          {(hasContrastWarning || hasQuietZoneWarning) && (
+            <View style={[styles.warningCard, { backgroundColor: `${C.tertiary}18`, borderColor: C.tertiary }]}> 
+              <MaterialIcons name="warning-amber" size={20} color={C.tertiary} />
+              <Text style={[styles.warningText, { color: C.onSurface }]}>
+                {hasContrastWarning ? 'Low contrast may make this QR code harder to scan. ' : ''}
+                {hasQuietZoneWarning ? 'A margin below 32 px can also reduce scan reliability.' : ''}
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabCard}>
-          <View style={styles.tabBar}>
-            {TABS.map(t => (
-              <Pressable
-                key={t.id}
-                style={[styles.tab, activeTab === t.id && styles.tabActive]}
-                onPress={() => setActiveTab(t.id)}
-              >
-                <Text style={[styles.tabLabel, activeTab === t.id && styles.tabLabelActive]}>
-                  {t.label}
-                </Text>
+        <View style={[styles.tabCard, { backgroundColor: C.white, borderColor: C.outlineVariant, shadowColor: C.black }]}> 
+          <View style={[styles.tabBar, { borderBottomColor: C.outlineVariant }]}> 
+            {TABS.map(tab => (
+              <Pressable key={tab.id} style={[styles.tab, activeTab === tab.id && { borderBottomColor: C.primary }]} onPress={() => setActiveTab(tab.id)}>
+                <Text style={[styles.tabLabel, { color: activeTab === tab.id ? C.primary : C.onSurfaceVariant }]}>{tab.label}</Text>
               </Pressable>
             ))}
           </View>
 
-          <View style={styles.tabContent}>
-            {/* CONTENT TAB */}
+          <View style={styles.tabPanel}>
             {activeTab === 'content' && (
-              <View style={styles.tabPanel}>
-                {/* Type Selector */}
-                <Text style={styles.fieldLabel}>TYP</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeScroll}>
-                  {QR_TYPES.map(t => (
-                    <Pressable
-                      key={t}
-                      style={[styles.typeBtn, qrType === t && styles.typeBtnActive]}
-                      onPress={() => setQrType(t)}
-                    >
-                      <Text style={[styles.typeBtnText, qrType === t && styles.typeBtnTextActive]}>
-                        {QR_TYPE_LABELS[t]}
-                      </Text>
+              <View style={[styles.contentPanel, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }]}>
+                <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant }]}>TYPE</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeList}>
+                  {QR_TYPES.map(type => (
+                    <Pressable key={type} style={[styles.typeBtn, { backgroundColor: C.white, borderColor: C.outlineVariant }, qrType === type && { backgroundColor: C.primary, borderColor: C.primary }]} onPress={() => setQrType(type)}>
+                      <Text style={[styles.typeBtnText, { color: qrType === type ? C.onPrimary : C.onSurfaceVariant }]}>{QR_TYPE_LABELS[type]}</Text>
                     </Pressable>
                   ))}
                 </ScrollView>
 
-                {/* Custom Title */}
-                <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>BEZEICHNUNG (OPTIONAL)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="z.B. Meine Website"
-                  placeholderTextColor={COLORS.outline}
-                  value={customTitle}
-                  onChangeText={setCustomTitle}
-                />
-
-                {/* Fields per type */}
-                {qrType === 'url' && (
-                  <>
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>URL</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="https://example.com"
-                      placeholderTextColor={COLORS.outline}
-                      value={urlValue}
-                      onChangeText={v => handleContentChange(v, setUrlValue)}
-                      keyboardType="url"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                  </>
-                )}
-
-                {qrType === 'text' && (
-                  <>
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>TEXT</Text>
-                    <TextInput
-                      style={[styles.input, styles.inputMulti]}
-                      placeholder="Dein Text hier..."
-                      placeholderTextColor={COLORS.outline}
-                      value={textValue}
-                      onChangeText={v => handleContentChange(v, setTextValue)}
-                      multiline
-                      numberOfLines={4}
-                    />
-                  </>
-                )}
-
-                {qrType === 'wifi' && (
-                  <>
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>NETZWERKNAME (SSID)</Text>
-                    <TextInput style={styles.input} placeholder="Mein WLAN" placeholderTextColor={COLORS.outline}
-                      value={wifiSSID} onChangeText={v => handleContentChange(v, setWifiSSID)} />
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>PASSWORT</Text>
-                    <TextInput style={styles.input} placeholder="Passwort" placeholderTextColor={COLORS.outline}
-                      value={wifiPass} onChangeText={v => handleContentChange(v, setWifiPass)} secureTextEntry />
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>VERSCHLÜSSELUNG</Text>
-                    <View style={styles.radioRow}>
-                      {(['WPA', 'WEP', 'nopass'] as const).map(enc => (
-                        <Pressable key={enc} style={[styles.radioBtn, wifiEnc === enc && styles.radioBtnActive]}
-                          onPress={() => { setWifiEnc(enc); setTimeout(() => sendUpdate(config), 300); }}>
-                          <Text style={[styles.radioBtnText, wifiEnc === enc && styles.radioBtnTextActive]}>{enc}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </>
-                )}
-
-                {qrType === 'vcard' && (
-                  <>
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>VORNAME</Text>
-                    <TextInput style={styles.input} placeholder="Max" placeholderTextColor={COLORS.outline}
-                      value={vcFirstName} onChangeText={v => handleContentChange(v, setVcFirstName)} />
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.sm }]}>NACHNAME</Text>
-                    <TextInput style={styles.input} placeholder="Mustermann" placeholderTextColor={COLORS.outline}
-                      value={vcLastName} onChangeText={v => handleContentChange(v, setVcLastName)} />
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.sm }]}>TELEFON</Text>
-                    <TextInput style={styles.input} placeholder="+49 123 456789" placeholderTextColor={COLORS.outline}
-                      value={vcPhone} onChangeText={v => handleContentChange(v, setVcPhone)} keyboardType="phone-pad" />
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.sm }]}>E-MAIL</Text>
-                    <TextInput style={styles.input} placeholder="max@example.com" placeholderTextColor={COLORS.outline}
-                      value={vcEmail} onChangeText={v => handleContentChange(v, setVcEmail)} keyboardType="email-address" autoCapitalize="none" />
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.sm }]}>FIRMA</Text>
-                    <TextInput style={styles.input} placeholder="Meine Firma GmbH" placeholderTextColor={COLORS.outline}
-                      value={vcCompany} onChangeText={v => handleContentChange(v, setVcCompany)} />
-                  </>
-                )}
-
-                {qrType === 'email' && (
-                  <>
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>E-MAIL ADRESSE</Text>
-                    <TextInput style={styles.input} placeholder="empfaenger@example.com" placeholderTextColor={COLORS.outline}
-                      value={emailTo} onChangeText={v => handleContentChange(v, setEmailTo)} keyboardType="email-address" autoCapitalize="none" />
-                  </>
-                )}
-
-                {qrType === 'phone' && (
-                  <>
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>TELEFONNUMMER</Text>
-                    <TextInput style={styles.input} placeholder="+49 123 456789" placeholderTextColor={COLORS.outline}
-                      value={phoneNum} onChangeText={v => handleContentChange(v, setPhoneNum)} keyboardType="phone-pad" />
-                  </>
-                )}
-
-                {qrType === 'sms' && (
-                  <>
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.md }]}>TELEFONNUMMER</Text>
-                    <TextInput style={styles.input} placeholder="+49 123 456789" placeholderTextColor={COLORS.outline}
-                      value={smsNum} onChangeText={v => handleContentChange(v, setSmsNum)} keyboardType="phone-pad" />
-                    <Text style={[styles.fieldLabel, { marginTop: SPACING.sm }]}>NACHRICHT (OPTIONAL)</Text>
-                    <TextInput style={[styles.input, styles.inputMulti]} placeholder="Deine Nachricht..." placeholderTextColor={COLORS.outline}
-                      value={smsMsg} onChangeText={v => handleContentChange(v, setSmsMsg)} multiline numberOfLines={3} />
-                  </>
-                )}
-              </View>
-            )}
-
-            {/* DESIGN TAB */}
-            {activeTab === 'design' && (
-              <View style={styles.tabPanel}>
-                <Text style={styles.fieldLabel}>MODUL-STIL</Text>
-                <View style={styles.styleGrid}>
-                  {DOT_STYLES.map(s => (
-                    <Pressable
-                      key={s.value}
-                      style={[styles.styleBtn, config.dotsStyle === s.value && styles.styleBtnActive]}
-                      onPress={() => updateConfig({ dotsStyle: s.value })}
-                    >
-                      <DotStyleIcon shape={s.value} />
-                      <Text style={[styles.styleBtnLabel, config.dotsStyle === s.value && styles.styleBtnLabelActive]}>
-                        {s.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <Text style={[styles.fieldLabel, { marginTop: SPACING.lg }]}>ECKEN-STIL</Text>
-                <View style={styles.radioRow}>
-                  {CORNER_STYLES.map(s => (
-                    <Pressable
-                      key={s.value}
-                      style={[styles.radioBtn, config.cornerSquareStyle === s.value && styles.radioBtnActive]}
-                      onPress={() => updateConfig({ cornerSquareStyle: s.value })}
-                    >
-                      <Text style={[styles.radioBtnText, config.cornerSquareStyle === s.value && styles.radioBtnTextActive]}>
-                        {s.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* COLORS TAB */}
-            {activeTab === 'colors' && (
-              <View style={styles.tabPanel}>
-                <Text style={styles.fieldLabel}>VORDERGRUNDFARBE</Text>
-                <View style={styles.colorRow}>
-                  {PRESET_COLORS.map(c => (
-                    <ColorSwatch
-                      key={c}
-                      color={c}
-                      selected={config.fgColor === c}
-                      onPress={() => updateConfig({ fgColor: c })}
-                    />
-                  ))}
-                </View>
-                <View style={styles.colorPreview}>
-                  <View style={[styles.colorDot, { backgroundColor: config.fgColor }]} />
-                  <Text style={styles.colorHex}>{config.fgColor}</Text>
-                </View>
-
-                <Text style={[styles.fieldLabel, { marginTop: SPACING.lg }]}>HINTERGRUNDFARBE</Text>
-                <View style={styles.colorRow}>
-                  {['#ffffff', '#faf8ff', '#f0f0f0', '#e8f4fd', '#fff3e0', '#fce4ec', '#f3e5f5', '#e8f5e9', '#fffde7', '#000000'].map(c => (
-                    <ColorSwatch
-                      key={c}
-                      color={c}
-                      selected={config.bgColor === c}
-                      onPress={() => updateConfig({ bgColor: c })}
-                    />
-                  ))}
-                </View>
-                <View style={styles.colorPreview}>
-                  <View style={[styles.colorDot, { backgroundColor: config.bgColor, borderWidth: 1, borderColor: COLORS.outlineVariant }]} />
-                  <Text style={styles.colorHex}>{config.bgColor}</Text>
-                </View>
-              </View>
-            )}
-
-            {/* LOGO TAB */}
-            {activeTab === 'logo' && (
-              <View style={styles.tabPanel}>
-                {config.logo ? (
-                  <View style={styles.logoPreviewRow}>
-                    <View style={styles.logoPreviewWrap}>
-                      <MaterialIcons name="image" size={40} color={COLORS.primary} />
-                      <Text style={styles.logoLoadedText}>Logo geladen</Text>
-                    </View>
-                    <Pressable style={styles.removeLogoBtn} onPress={removeLogo}>
-                      <MaterialIcons name="delete" size={20} color={COLORS.error} />
-                      <Text style={styles.removeLogoText}>Entfernen</Text>
-                    </Pressable>
+                {qrType === 'url' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>URL</Text><TextInput style={[styles.input, styles.urlInput, inputStyle]} placeholder="https://example.com" placeholderTextColor={C.outline} value={urlValue} onChangeText={setUrlDraft} onBlur={() => setUrlDraft(urlValue)} keyboardType="url" autoCapitalize="none" autoCorrect={false} multiline numberOfLines={3} scrollEnabled /></>}
+                {qrType === 'text' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>TEXT</Text><TextInput style={[styles.input, styles.inputMulti, inputStyle]} placeholder="Your text here..." placeholderTextColor={C.outline} value={textValue} onChangeText={setTextValue} multiline numberOfLines={4} /></>}
+                {qrType === 'wifi' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>NETWORK NAME (SSID)</Text><TextInput style={[styles.input, inputStyle]} placeholder="My Wi-Fi" placeholderTextColor={C.outline} value={wifiSSID} onChangeText={setWifiSSID} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>PASSWORD</Text><TextInput style={[styles.input, inputStyle]} placeholder="Password" placeholderTextColor={C.outline} value={wifiPass} onChangeText={setWifiPass} secureTextEntry /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>ENCRYPTION</Text><View style={styles.radioRow}>{(['WPA', 'WEP', 'nopass'] as const).map(enc => <Pressable key={enc} style={[styles.radioBtn, { backgroundColor: C.white, borderColor: C.outlineVariant }, wifiEnc === enc && { backgroundColor: `${C.primary}18`, borderColor: C.primary }]} onPress={() => setWifiEnc(enc)}><Text style={[styles.radioBtnText, { color: wifiEnc === enc ? C.primary : C.onSurfaceVariant }]}>{enc}</Text></Pressable>)}</View></>}
+                {qrType === 'vcard' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>FIRST NAME</Text><TextInput style={[styles.input, inputStyle]} placeholder="Max" placeholderTextColor={C.outline} value={vcFirstName} onChangeText={setVcFirstName} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>LAST NAME</Text><TextInput style={[styles.input, inputStyle]} placeholder="Smith" placeholderTextColor={C.outline} value={vcLastName} onChangeText={setVcLastName} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>PHONE</Text><TextInput style={[styles.input, inputStyle]} placeholder="+49 123 456789" placeholderTextColor={C.outline} value={vcPhone} onChangeText={setVcPhone} keyboardType="phone-pad" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>E-MAIL</Text><TextInput style={[styles.input, inputStyle]} placeholder="max@example.com" placeholderTextColor={C.outline} value={vcEmail} onChangeText={setVcEmail} keyboardType="email-address" autoCapitalize="none" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>COMPANY</Text><TextInput style={[styles.input, inputStyle]} placeholder="My Company Inc." placeholderTextColor={C.outline} value={vcCompany} onChangeText={setVcCompany} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>WEBSITE</Text><TextInput style={[styles.input, styles.urlInput, inputStyle]} placeholder="https://example.com" placeholderTextColor={C.outline} value={vcWebsite} onChangeText={setWebsiteDraft} onBlur={() => setWebsiteDraft(vcWebsite)} keyboardType="url" autoCapitalize="none" multiline numberOfLines={2} scrollEnabled /></>}
+                {qrType === 'email' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>EMAIL ADDRESS</Text><TextInput style={[styles.input, inputStyle]} placeholder="recipient@example.com" placeholderTextColor={C.outline} value={emailTo} onChangeText={setEmailTo} keyboardType="email-address" autoCapitalize="none" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>SUBJECT (OPTIONAL)</Text><TextInput style={[styles.input, inputStyle]} placeholder="Subject" placeholderTextColor={C.outline} value={emailSubject} onChangeText={setEmailSubject} /></>}
+                {qrType === 'phone' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>PHONE NUMBER</Text><TextInput style={[styles.input, inputStyle]} placeholder="+49 123 456789" placeholderTextColor={C.outline} value={phoneNum} onChangeText={setPhoneNum} keyboardType="phone-pad" /></>}
+                {qrType === 'sms' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>PHONE NUMBER</Text><TextInput style={[styles.input, inputStyle]} placeholder="+49 123 456789" placeholderTextColor={C.outline} value={smsNum} onChangeText={setSmsNum} keyboardType="phone-pad" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>MESSAGE (OPTIONAL)</Text><TextInput style={[styles.input, styles.inputMulti, inputStyle]} placeholder="Your message..." placeholderTextColor={C.outline} value={smsMsg} onChangeText={setSmsMsg} multiline numberOfLines={3} /></>}
+                {qrType === 'mecard' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>NAME</Text><TextInput style={[styles.input, inputStyle]} placeholder="Max Smith" placeholderTextColor={C.outline} value={mcName} onChangeText={setMcName} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>PHONE</Text><TextInput style={[styles.input, inputStyle]} placeholder="+49 123 456789" placeholderTextColor={C.outline} value={mcPhone} onChangeText={setMcPhone} keyboardType="phone-pad" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>E-MAIL</Text><TextInput style={[styles.input, inputStyle]} placeholder="max@example.com" placeholderTextColor={C.outline} value={mcEmail} onChangeText={setMcEmail} keyboardType="email-address" autoCapitalize="none" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>WEBSITE</Text><TextInput style={[styles.input, inputStyle]} placeholder="https://example.com" placeholderTextColor={C.outline} value={mcUrl} onChangeText={setMcUrl} keyboardType="url" autoCapitalize="none" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>ADDRESS</Text><TextInput style={[styles.input, inputStyle]} placeholder="123 Main St" placeholderTextColor={C.outline} value={mcAddress} onChangeText={setMcAddress} /></>}
+                {qrType === 'location' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>LATITUDE</Text><TextInput style={[styles.input, inputStyle]} placeholder="e.g. 52.5200" placeholderTextColor={C.outline} value={locLat} onChangeText={setLocLat} keyboardType="numeric" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>LONGITUDE</Text><TextInput style={[styles.input, inputStyle]} placeholder="e.g. 13.4050" placeholderTextColor={C.outline} value={locLng} onChangeText={setLocLng} keyboardType="numeric" /></>}
+                {qrType === 'event' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>EVENT TITLE</Text><TextInput style={[styles.input, inputStyle]} placeholder="My Event" placeholderTextColor={C.outline} value={evTitle} onChangeText={setEvTitle} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>LOCATION</Text><TextInput style={[styles.input, inputStyle]} placeholder="Event Location" placeholderTextColor={C.outline} value={evLocation} onChangeText={setEvLocation} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>START DATE (YYYYMMDDTHHMMSS)</Text><TextInput style={[styles.input, inputStyle]} placeholder="20261231T200000" placeholderTextColor={C.outline} value={evStart} onChangeText={setEvStart} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>END DATE (YYYYMMDDTHHMMSS)</Text><TextInput style={[styles.input, inputStyle]} placeholder="20261231T235959" placeholderTextColor={C.outline} value={evEnd} onChangeText={setEvEnd} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>DESCRIPTION</Text><TextInput style={[styles.input, inputStyle, { height: 80 }]} placeholder="Event details..." placeholderTextColor={C.outline} value={evDesc} onChangeText={setEvDesc} multiline /></>}
+                {qrType === 'crypto' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>CURRENCY</Text>
+                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: SPACING.sm }}>
+                    {['bitcoin', 'ethereum', 'litecoin'].map(c => (
+                      <Pressable key={c} style={[styles.typeBtn, { paddingVertical: 8, paddingHorizontal: 12 }, cryptoCurrency === c && { backgroundColor: C.primary, borderColor: C.primary }]} onPress={() => setCryptoCurrency(c as any)}>
+                        <Text style={[styles.typeBtnText, { color: cryptoCurrency === c ? C.onPrimary : C.onSurfaceVariant }]}>{c.charAt(0).toUpperCase() + c.slice(1)}</Text>
+                      </Pressable>
+                    ))}
                   </View>
-                ) : (
-                  <Pressable style={styles.logoUploadBtn} onPress={pickLogo}>
-                    <MaterialIcons name="add-photo-alternate" size={32} color={COLORS.primary} />
-                    <Text style={styles.logoUploadText}>Logo hochladen</Text>
-                    <Text style={styles.logoUploadSub}>PNG oder JPG, quadratisch empfohlen</Text>
-                  </Pressable>
-                )}
+                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant }]}>ADDRESS</Text><TextInput style={[styles.input, inputStyle]} placeholder="Wallet Address" placeholderTextColor={C.outline} value={cryptoAddress} onChangeText={setCryptoAddress} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>AMOUNT</Text><TextInput style={[styles.input, inputStyle]} placeholder="0.0" placeholderTextColor={C.outline} value={cryptoAmount} onChangeText={setCryptoAmount} keyboardType="numeric" /></>}
+                {['facebook', 'twitter', 'youtube'].includes(qrType) && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>{QR_TYPE_LABELS[qrType]} URL</Text><TextInput style={[styles.input, styles.urlInput, inputStyle]} placeholder={`https://${qrType}.com/username`} placeholderTextColor={C.outline} value={urlValue} onChangeText={setUrlDraft} onBlur={() => setUrlDraft(urlValue)} keyboardType="url" autoCapitalize="none" multiline numberOfLines={2} scrollEnabled /></>}
+              </View>
+            )}
 
-                <Text style={[styles.fieldLabel, { marginTop: SPACING.lg }]}>
-                  LOGO-GRÖSSE — {Math.round(config.logoSize * 100)}%
-                </Text>
-                <View style={styles.sliderRow}>
-                  <Text style={styles.sliderLabel}>10%</Text>
-                  <Pressable style={styles.sliderTrack} onPress={() => {}}>
-                    <View style={[styles.sliderFill, { width: `${(config.logoSize - 0.1) / 0.3 * 100}%` }]} />
-                    <View style={styles.sliderThumb} />
-                  </Pressable>
-                  <Text style={styles.sliderLabel}>40%</Text>
-                </View>
-                <View style={styles.sizePresets}>
-                  {[0.15, 0.25, 0.3, 0.35, 0.4].map(s => (
+            {activeTab === 'design' && (
+              <View style={{ gap: SPACING.md }}>
+                <Pressable style={styles.sectionToggle} onPress={() => setModuleStylesExpanded(value => !value)}>
+                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>MODULE STYLE</Text>
+                  <MaterialIcons name={moduleStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
+                </Pressable>
+                <View style={styles.styleGrid}>{visibleDotStyles.map(style => <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.dotsStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ dotsStyle: style.value })}><SpriteIcon shape={style.value} type='body' color={config.dotsStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.dotsStyle === style.value} /><Text style={[styles.styleBtnLabel, { color: config.dotsStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text></Pressable>)}</View>
+                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.sm }]} onPress={() => setCornerStylesExpanded(value => !value)}>
+                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>FRAME STYLE</Text>
+                  <MaterialIcons name={cornerStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
+                </Pressable>
+                <View style={styles.styleGrid}>{visibleCornerStyles.map(style => <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerSquareStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerSquareStyle: style.value })}><SpriteIcon shape={style.value} type='frame' color={config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerSquareStyle === style.value} /><Text style={[styles.styleBtnLabel, { color: config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text></Pressable>)}</View>
+                
+                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.sm }]} onPress={() => setBallStylesExpanded(value => !value)}>
+                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>EYEBALL STYLE</Text>
+                  <MaterialIcons name={ballStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
+                </Pressable>
+                <View style={styles.styleGrid}>{visibleBallStyles.map(style => <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerDotStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerDotStyle: style.value })}><SpriteIcon shape={style.value} type='ball' color={config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerDotStyle === style.value} /><Text style={[styles.styleBtnLabel, { color: config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text></Pressable>)}</View>
+                <ValueSlider C={C} label="OUTER MARGIN" value={config.margin} min={0} max={180} suffix=" px" onChange={margin => updateConfig({ margin })} />
+                <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>QR SIZE</Text>
+                <View style={styles.sizePresetRow}>
+                  {([
+                    { id: 'small', label: 'Small', size: 512 },
+                    { id: 'medium', label: 'Medium', size: 1024 },
+                    { id: 'large', label: 'Large', size: 2048 },
+                    { id: 'custom', label: 'Custom', size: config.qrSize },
+                  ] as Array<{ id: QRSizePreset; label: string; size: number }>).map(option => (
                     <Pressable
-                      key={s}
-                      style={[styles.sizePreset, config.logoSize === s && styles.sizePresetActive]}
-                      onPress={() => updateConfig({ logoSize: s })}
+                      key={option.id}
+                      style={[styles.sizePresetBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, qrSizePreset === option.id && { backgroundColor: `${C.primary}18`, borderColor: C.primary }]}
+                      onPress={() => setQRSizePreset(option.id)}
                     >
-                      <Text style={[styles.sizePresetText, config.logoSize === s && styles.sizePresetTextActive]}>
-                        {Math.round(s * 100)}%
-                      </Text>
+                      <Text style={[styles.sizePresetLabel, { color: qrSizePreset === option.id ? C.primary : C.onSurface }]}>{option.label}</Text>
+                      <Text style={[styles.sizePresetValue, { color: C.onSurfaceVariant }]}>{option.size}px</Text>
                     </Pressable>
                   ))}
                 </View>
+                {qrSizePreset === 'custom' && <ValueSlider C={C} label="CUSTOM SIZE" value={config.qrSize} min={512} max={2048} suffix=" px" onChange={qrSize => updateConfig({ qrSize })} />}
+              </View>
+            )}
+
+            {activeTab === 'colors' && (
+              <View style={{ gap: SPACING.sm }}>
+                <ColorPickerBlock C={C} title="FOREGROUND" value={config.fgColor} palette={PRESET_FG} onChange={fgColor => updateConfig({ fgColor })} />
+                <ColorPickerBlock C={C} title="BACKGROUND" value={config.bgColor} palette={PRESET_BG} onChange={bgColor => updateConfig({ bgColor })} />
+                <View style={[styles.switchRow, { borderColor: C.outlineVariant, backgroundColor: C.surfaceContainerLow }]}>
+                  <View style={{ flex: 1 }}><Text style={[styles.switchTitle, { color: C.onSurface }]}>Transparent background</Text><Text style={[styles.switchSubtitle, { color: C.onSurfaceVariant }]}>For stickers, logos, and overlays.</Text></View>
+                  <Switch value={config.transparentBg} onValueChange={transparentBg => updateConfig({ transparentBg })} trackColor={{ false: C.outlineVariant, true: C.primary }} thumbColor={C.white} />
+                </View>
+              </View>
+            )}
+
+            {activeTab === 'logo' && (
+              <View style={{ gap: SPACING.md }}>
+                {config.logo ? <View style={[styles.logoPreviewRow, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }]}><View style={styles.logoPreviewWrap}><MaterialIcons name="image" size={36} color={C.primary} /><Text style={[styles.logoLoadedText, { color: C.onSurface }]}>Logo loaded</Text></View><Pressable style={styles.removeLogoBtn} onPress={() => updateConfig({ logo: undefined })}><MaterialIcons name="delete" size={20} color={C.error} /><Text style={[styles.removeLogoText, { color: C.error }]}>Remove</Text></Pressable></View> : <Pressable style={[styles.logoUploadBtn, { borderColor: C.primary, backgroundColor: `${C.primary}08` }]} onPress={pickLogo}><MaterialIcons name="add-photo-alternate" size={32} color={C.primary} /><Text style={[styles.logoUploadText, { color: C.primary }]}>Upload logo</Text><Text style={[styles.logoUploadSub, { color: C.outline }]}>PNG or JPG, square recommended</Text></Pressable>}
+                <ValueSlider C={C} label="LOGO PADDING" value={config.logoMargin} min={0} max={20} suffix=" px" onChange={logoMargin => updateConfig({ logoMargin })} />
+                <ValueSlider C={C} label="LOGO ROUNDING" value={config.logoRadius ?? 0} min={0} max={50} suffix="%" onChange={logoRadius => updateConfig({ logoRadius })} />
               </View>
             )}
           </View>
         </View>
 
-        {/* Save Button */}
-        <Pressable
-          style={[styles.saveBtn, exporting && styles.saveBtnDisabled]}
-          onPress={handleSaveAndExport}
-          disabled={exporting}
-        >
-          {exporting ? (
-            <ActivityIndicator color={COLORS.white} size="small" />
-          ) : (
-            <MaterialIcons name="download" size={22} color={COLORS.white} />
-          )}
-          <Text style={styles.saveBtnText}>
-            {exporting ? 'Wird exportiert…' : 'Speichern & Exportieren'}
-          </Text>
+        <Pressable style={[styles.saveBtn, { backgroundColor: C.primary, shadowColor: C.primary }, exporting && styles.saveBtnDisabled]} onPress={handleSaveAndExport} disabled={exporting}>
+          {exporting ? <ActivityIndicator color={C.onPrimary} size="small" /> : <MaterialIcons name="download" size={22} color={C.onPrimary} />}
+          <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>{exporting ? 'Saving...' : 'Save to Photos'}</Text>
         </Pressable>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.surface },
-  header: {
-    paddingHorizontal: SPACING.containerPadding,
-    paddingVertical: SPACING.md,
-    backgroundColor: COLORS.white,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.outlineVariant,
-    alignItems: 'center',
-  },
-  headerTitle: { ...TYPOGRAPHY.headlineSm, color: COLORS.onSurface },
+  safe: { flex: 1 },
+  header: { paddingHorizontal: SPACING.containerPadding, paddingVertical: SPACING.sm, borderBottomWidth: 1, alignItems: 'center' },
+  headerTitle: { ...TYPOGRAPHY.headlineSm },
   scroll: { flex: 1 },
-  previewSection: {
-    alignItems: 'center',
-    paddingTop: SPACING.xl,
-    paddingBottom: SPACING.md,
-  },
-  previewWrapper: {
-    width: 280,
-    height: 280,
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.xxl,
-    overflow: 'hidden',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-    position: 'relative',
-  },
-  cornerTL: { position: 'absolute', top: -1, left: -1, width: 24, height: 24, borderTopWidth: 2, borderLeftWidth: 2, borderColor: COLORS.primary, borderTopLeftRadius: RADIUS.xxl, zIndex: 10 },
-  cornerTR: { position: 'absolute', top: -1, right: -1, width: 24, height: 24, borderTopWidth: 2, borderRightWidth: 2, borderColor: COLORS.primary, borderTopRightRadius: RADIUS.xxl, zIndex: 10 },
-  cornerBL: { position: 'absolute', bottom: -1, left: -1, width: 24, height: 24, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: COLORS.primary, borderBottomLeftRadius: RADIUS.xxl, zIndex: 10 },
-  cornerBR: { position: 'absolute', bottom: -1, right: -1, width: 24, height: 24, borderBottomWidth: 2, borderRightWidth: 2, borderColor: COLORS.primary, borderBottomRightRadius: RADIUS.xxl, zIndex: 10 },
-  webview: { flex: 1, backgroundColor: 'transparent' },
-  previewLoader: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.white, zIndex: 5, gap: SPACING.sm },
-  loadingText: { ...TYPOGRAPHY.labelMd, color: COLORS.outline },
-  previewLabel: { ...TYPOGRAPHY.labelMd, color: COLORS.onSurfaceVariant, marginTop: SPACING.md },
-  tabCard: {
-    marginHorizontal: SPACING.containerPadding,
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.xxl,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.outlineVariant },
-  tab: { flex: 1, paddingVertical: SPACING.md, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: COLORS.primary },
-  tabLabel: { ...TYPOGRAPHY.labelMd, color: COLORS.onSurfaceVariant },
-  tabLabelActive: { color: COLORS.primary },
-  tabContent: {},
-  tabPanel: { padding: SPACING.md, gap: SPACING.xs },
-  fieldLabel: { ...TYPOGRAPHY.labelSm, color: COLORS.onSurfaceVariant, letterSpacing: 0.6, marginBottom: SPACING.sm },
-  input: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.md,
-    ...TYPOGRAPHY.bodyMd,
-    color: COLORS.onSurface,
-    backgroundColor: COLORS.surfaceContainerLowest,
-  },
+  previewSection: { alignItems: 'center', paddingTop: SPACING.md, paddingHorizontal: SPACING.containerPadding, paddingBottom: SPACING.sm },
+  previewWrapper: { width: 270, height: 270, borderRadius: RADIUS.xxl, overflow: 'hidden', padding: 16, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 4, borderWidth: 1, position: 'relative' },
+  webview: { flex: 1, backgroundColor: 'transparent', borderRadius: RADIUS.xl, overflow: 'hidden' },
+  previewLoader: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', zIndex: 5, gap: SPACING.sm },
+  loadingText: { ...TYPOGRAPHY.labelMd },
+  previewLabel: { ...TYPOGRAPHY.labelMd, marginTop: SPACING.sm },
+  warningCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.md, borderWidth: 1, borderRadius: RADIUS.xl, padding: SPACING.md },
+  warningText: { flex: 1, ...TYPOGRAPHY.labelMd },
+  tabCard: { marginHorizontal: SPACING.containerPadding, borderRadius: RADIUS.xxl, overflow: 'hidden', borderWidth: 1, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 2 },
+  tabBar: { flexDirection: 'row', borderBottomWidth: 1 },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabLabel: { ...TYPOGRAPHY.labelMd },
+  tabPanel: { padding: SPACING.sm },
+  contentPanel: { gap: SPACING.sm, borderWidth: 1, borderRadius: RADIUS.xl, padding: SPACING.md },
+  fieldLabel: { ...TYPOGRAPHY.labelSm, letterSpacing: 0.6, marginBottom: SPACING.sm },
+  input: { height: 46, borderWidth: 1, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 0, textAlignVertical: 'center', ...TYPOGRAPHY.bodyMd, lineHeight: 22 },
+  urlInput: { height: 82, maxHeight: 120, paddingTop: SPACING.sm, paddingBottom: SPACING.sm, textAlignVertical: 'top' },
   inputMulti: { height: 96, paddingTop: SPACING.sm, textAlignVertical: 'top' },
-  typeScroll: { flexGrow: 0, marginBottom: SPACING.xs },
-  typeBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-    marginRight: SPACING.sm,
-    backgroundColor: COLORS.white,
-  },
-  typeBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  typeBtnText: { ...TYPOGRAPHY.labelMd, color: COLORS.onSurfaceVariant },
-  typeBtnTextActive: { color: COLORS.white },
+  typeList: { gap: SPACING.sm, paddingRight: SPACING.md, paddingVertical: 2 },
+  typeBtn: { minHeight: 34, paddingHorizontal: SPACING.md, paddingVertical: 6, borderRadius: RADIUS.full, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  typeBtnText: { ...TYPOGRAPHY.labelMd },
   radioRow: { flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap' },
-  radioBtn: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-    backgroundColor: COLORS.white,
-  },
-  radioBtnActive: { backgroundColor: `${COLORS.primary}18`, borderColor: COLORS.primary },
-  radioBtnText: { ...TYPOGRAPHY.labelMd, color: COLORS.onSurfaceVariant },
-  radioBtnTextActive: { color: COLORS.primary },
-  styleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
-  styleBtn: {
-    width: 72,
-    height: 72,
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-    backgroundColor: COLORS.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-  },
-  styleBtnActive: { borderColor: COLORS.primary, backgroundColor: `${COLORS.primary}10` },
-  styleBtnLabel: { ...TYPOGRAPHY.labelSm, color: COLORS.onSurfaceVariant },
-  styleBtnLabelActive: { color: COLORS.primary },
-  colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.sm },
-  swatch: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  swatchSelected: { borderColor: COLORS.primary, transform: [{ scale: 1.1 }] },
-  colorPreview: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.xs },
-  colorDot: { width: 28, height: 28, borderRadius: RADIUS.lg },
-  colorHex: { ...TYPOGRAPHY.labelMd, color: COLORS.onSurfaceVariant, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
-  logoUploadBtn: {
-    height: 120,
-    borderRadius: RADIUS.xxl,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-    backgroundColor: `${COLORS.primary}08`,
-  },
-  logoUploadText: { ...TYPOGRAPHY.labelMd, color: COLORS.primary },
-  logoUploadSub: { ...TYPOGRAPHY.labelSm, color: COLORS.outline },
-  logoPreviewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: SPACING.md,
-    backgroundColor: COLORS.surfaceContainerLow,
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-  },
+  radioBtn: { minHeight: 38, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, borderRadius: RADIUS.full, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  radioBtnText: { ...TYPOGRAPHY.labelMd },
+  styleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, justifyContent: 'center' },
+  styleBtn: { width: 92, height: 80, borderRadius: RADIUS.xl, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.xs },
+  styleBtnLabel: { ...TYPOGRAPHY.labelSm, textAlign: 'center' },
+  sectionToggle: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sizePresetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  sizePresetBtn: { flex: 1, minWidth: 78, borderRadius: RADIUS.lg, borderWidth: 1, paddingVertical: SPACING.sm, alignItems: 'center', justifyContent: 'center' },
+  sizePresetLabel: { ...TYPOGRAPHY.labelMd },
+  sizePresetValue: { ...TYPOGRAPHY.labelSm, marginTop: 2, fontVariant: ['tabular-nums'] },
+  cornerIconOuter: { width: 24, height: 24, borderWidth: 4, alignItems: 'center', justifyContent: 'center' },
+  cornerIconInner: { width: 8, height: 8 },
+  segmentRow: { flexDirection: 'row', padding: 4, borderRadius: RADIUS.xl, gap: 4 },
+  segmentBtn: { flex: 1, minHeight: 42, borderRadius: RADIUS.lg, alignItems: 'center', justifyContent: 'center' },
+  segmentText: { ...TYPOGRAPHY.labelMd },
+  colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  compactColorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  colorPanel: { gap: SPACING.sm, borderRadius: RADIUS.xl, borderWidth: 1, padding: SPACING.sm },
+  colorPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  swatch: { width: 30, height: 30, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  colorDot: { width: 32, height: 32, borderRadius: RADIUS.lg, borderWidth: 1 },
+  hexRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  hexInput: { flex: 1, height: 48, borderWidth: 1, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, ...TYPOGRAPHY.labelMd, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  compactHexInput: { width: 88, height: 34, borderWidth: 1, borderRadius: RADIUS.md, paddingHorizontal: SPACING.sm, ...TYPOGRAPHY.labelMd, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, borderWidth: 1, borderRadius: RADIUS.xl, padding: SPACING.sm },
+  switchTitle: { ...TYPOGRAPHY.labelMd },
+  switchSubtitle: { ...TYPOGRAPHY.labelSm, marginTop: 2 },
+  sliderLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sliderValue: { ...TYPOGRAPHY.labelSm, fontVariant: ['tabular-nums'] },
+  sliderTrack: { height: 30, borderRadius: 15, overflow: 'hidden', position: 'relative', justifyContent: 'center' },
+  sliderFillRow: { borderRadius: 15, flexDirection: 'row', overflow: 'hidden' },
+  sliderProgress: { position: 'absolute', left: 0, top: 0, bottom: 0, opacity: 0.16 },
+  sliderThumb: { position: 'absolute', width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff', borderWidth: 2, marginLeft: -12, elevation: 4 },
+  logoUploadBtn: { height: 120, borderRadius: RADIUS.xxl, borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: SPACING.xs },
+  logoUploadText: { ...TYPOGRAPHY.labelMd },
+  logoUploadSub: { ...TYPOGRAPHY.labelSm },
+  logoPreviewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACING.md, borderRadius: RADIUS.xl, borderWidth: 1 },
   logoPreviewWrap: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  logoLoadedText: { ...TYPOGRAPHY.labelMd, color: COLORS.onSurface },
+  logoLoadedText: { ...TYPOGRAPHY.labelMd },
   removeLogoBtn: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
-  removeLogoText: { ...TYPOGRAPHY.labelMd, color: COLORS.error },
-  sliderRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.sm },
-  sliderLabel: { ...TYPOGRAPHY.labelSm, color: COLORS.outline, width: 32, textAlign: 'center' },
-  sliderTrack: {
-    flex: 1,
-    height: 6,
-    backgroundColor: COLORS.outlineVariant,
-    borderRadius: 3,
-    overflow: 'hidden',
-    position: 'relative',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sliderFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
-  sliderThumb: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: COLORS.white,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  sizePresets: { flexDirection: 'row', gap: SPACING.sm },
-  sizePreset: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.outlineVariant,
-  },
-  sizePresetActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  sizePresetText: { ...TYPOGRAPHY.labelSm, color: COLORS.onSurfaceVariant },
-  sizePresetTextActive: { color: COLORS.white },
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    margin: SPACING.containerPadding,
-    height: 56,
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.xl,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
+  removeLogoText: { ...TYPOGRAPHY.labelMd },
+  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, marginHorizontal: SPACING.containerPadding, marginTop: SPACING.md, marginBottom: SPACING.sm, height: 48, borderRadius: RADIUS.xl, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
   saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { ...TYPOGRAPHY.headlineSm, color: COLORS.white, fontSize: 16 },
+  saveBtnText: { ...TYPOGRAPHY.headlineSm, fontSize: 16 },
 });

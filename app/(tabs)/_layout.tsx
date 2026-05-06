@@ -1,24 +1,26 @@
 import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
-import { COLORS } from '@/constants/Theme';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function TabLayout() {
+  const { colors: C } = useTheme();
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.outline,
+        tabBarActiveTintColor: C.primary,
+        tabBarInactiveTintColor: C.outline,
         tabBarStyle: {
-          backgroundColor: 'rgba(255, 255, 255, 0.97)',
-          borderTopColor: '#e8ecf0',
+          backgroundColor: C.white,
+          borderTopColor: C.outlineVariant,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 84 : 68,
-          paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+          height: Platform.OS === 'ios' ? 94 : 64,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
           paddingTop: 8,
-          shadowColor: '#0f172a',
+          shadowColor: C.black,
           shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.05,
+          shadowOpacity: 0.08,
           shadowRadius: 12,
           elevation: 8,
         },
@@ -26,7 +28,7 @@ export default function TabLayout() {
           fontSize: 11,
           fontWeight: '600',
           textTransform: 'uppercase',
-          letterSpacing: 0.5,
+          letterSpacing: 0.3,
           marginTop: 2,
         },
         headerShown: false,
@@ -36,8 +38,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="dashboard" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="dashboard" size={25} color={color} />
           ),
         }}
       />
@@ -45,8 +47,8 @@ export default function TabLayout() {
         name="scan"
         options={{
           title: 'Scan',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="qr-code-scanner" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="qr-code-scanner" size={25} color={color} />
           ),
         }}
       />
@@ -54,17 +56,17 @@ export default function TabLayout() {
         name="create"
         options={{
           title: 'Create',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="add-box" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="add-box" size={25} color={color} />
           ),
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
-          title: 'Verlauf',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="history" size={size} color={color} />
+          title: 'History',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="history" size={25} color={color} />
           ),
         }}
       />

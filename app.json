@@ -16,8 +16,9 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "QR Point benötigt die Kamera zum Scannen von QR-Codes.",
-        "NSPhotoLibraryUsageDescription": "QR Point benötigt Zugriff auf Fotos für das Logo."
+        "NSCameraUsageDescription": "QR Point needs camera access to scan QR codes.",
+        "NSPhotoLibraryUsageDescription": "QR Point needs photo access to choose a logo.",
+        "NSPhotoLibraryAddUsageDescription": "QR Point saves QR codes as images to your photo library."
       }
     },
     "android": {
@@ -37,11 +38,23 @@
       "expo-router",
       [
         "expo-camera",
-        { "cameraPermission": "QR Point benötigt die Kamera zum Scannen von QR-Codes." }
+        {
+          "cameraPermission": "QR Point needs camera access to scan QR codes."
+        }
       ],
       [
         "expo-image-picker",
-        { "photosPermission": "QR Point benötigt Zugriff auf Fotos für das Logo." }
+        {
+          "photosPermission": "QR Point needs photo access to choose a logo."
+        }
+      ],
+      "expo-barcode-scanner",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "QR Point needs photo access to save QR codes.",
+          "savePhotosPermission": "QR Point saves QR codes as images to your photo library."
+        }
       ]
     ],
     "experiments": {
