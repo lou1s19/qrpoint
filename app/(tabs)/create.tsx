@@ -11,17 +11,18 @@ import {
   Platform,
   ActivityIndicator,
   Switch,
-  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Image, Modal } from 'react-native';
+import { WebView } from 'react-native-webview';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import { MaterialIcons } from '@expo/vector-icons';
-import ColorPicker, { Panel1, Swatches, Preview, OpacitySlider, HueSlider } from 'reanimated-color-picker';
+
 import { SPACING, RADIUS, TYPOGRAPHY } from '@/constants/Theme';
 import { useTheme } from '@/context/ThemeContext';
 import { SPRITE_COORDINATES } from '@/constants/SpriteCoordinates';
@@ -38,6 +39,8 @@ import {
   normalizeWebUrlContent,
 } from '@/constants/QRTypes';
 import { useQRHistory } from '@/hooks/useQRHistory';
+import { mapCornerSquareStyle, mapCornerDotStyle, mapDotsStyle } from '@/constants/QRStyleMapping';
+import { QR_GENERATOR_HTML } from '@/constants/QRGeneratorHTML';
 
 type TabId = 'content' | 'design' | 'colors' | 'logo';
 type QRSizePreset = 'small' | 'medium' | 'large' | 'custom';
@@ -54,19 +57,88 @@ const TABS: Array<{ id: TabId; label: string }> = [
 ];
 
 const DOT_STYLES: Array<{ value: DotsStyle; label: string }> = [
-  { value: 'square', label: 'Square' }, { value: 'mosaic', label: 'Mosaic' }, { value: 'dot', label: 'Dot' }, { value: 'circle', label: 'Circle' }, { value: 'circle-zebra', label: 'Circle Zebra' }, { value: 'circle-zebra-vertical', label: 'Circle Zebra Vertical' }, { value: 'circular', label: 'Circular' }, { value: 'edge-cut', label: 'Edge Cut' }, { value: 'edge-cut-smooth', label: 'Edge Cut Smooth' }, { value: 'japnese', label: 'Japnese' }, { value: 'leaf', label: 'Leaf' }, { value: 'pointed', label: 'Pointed' }, { value: 'pointed-edge-cut', label: 'Pointed Edge Cut' }, { value: 'pointed-in', label: 'Pointed In' }, { value: 'pointed-in-smooth', label: 'Pointed In Smooth' }, { value: 'pointed-smooth', label: 'Pointed Smooth' }, { value: 'round', label: 'Round' }, { value: 'rounded-in', label: 'Rounded In' }, { value: 'rounded-in-smooth', label: 'Rounded In Smooth' }, { value: 'rounded-pointed', label: 'Rounded Pointed' }, { value: 'star', label: 'Star' }, { value: 'diamond', label: 'Diamond' }
+  { value: 'square', label: 'Square' },
+  { value: 'dot', label: 'Dots' },
+  { value: 'round', label: 'Round' },
+  { value: 'circular', label: 'Circular' },
+  { value: 'edge-cut', label: 'Classy' },
+  { value: 'edge-cut-smooth', label: 'Smooth' },
 ];
 
-const CORNER_STYLES: Array<{ value: CornerSquareStyle; label: string }> = Array.from({length: 17}, (_, i) => ({ value: `frame${i}` as CornerSquareStyle, label: `Frame ${i}` }));
-const BALL_STYLES: Array<{ value: CornerDotStyle; label: string }> = Array.from({length: 20}, (_, i) => ({ value: `ball${i}` as CornerDotStyle, label: `Ball ${i}` }));
+const CORNER_STYLES: Array<{ value: CornerSquareStyle; label: string; icon?: string }> = [
+  { value: 'frame0', label: 'Square' },
+  { value: 'frame1', label: 'Rounded', icon: 'frame13' },
+  { value: 'frame2', label: 'Circle', icon: 'frame12' },
+];
+
+const BALL_STYLES: Array<{ value: CornerDotStyle; label: string; icon?: string }> = [
+  { value: 'ball0', label: 'Square' },
+  { value: 'ball1', label: 'Circle', icon: 'ball14' },
+];
 
 const QR_TYPES: QRType[] = ['url', 'text', 'email', 'phone', 'sms', 'vcard', 'mecard', 'location', 'facebook', 'twitter', 'youtube', 'event', 'crypto', 'wifi'];
 const PRESET_FG = ['#4648d4', '#000000', '#1a1a2e', '#e63946', '#2d6a4f', '#f77f00', '#7b2d8b', '#0077b6', '#333333', '#c77dff'];
 const PRESET_BG = ['#ffffff', '#faf8ff', '#f0f0f0', '#e8f4fd', '#fff3e0', '#fce4ec', '#f3e5f5', '#e8f5e9', '#fffde7', '#000000'];
 
+const SHAPE_IMAGES: Record<string, any> = {
+  "ball0": require("@/assets/images/shapes/ball0.png"),
+  "ball1": require("@/assets/images/shapes/ball1.png"),
+  "ball10": require("@/assets/images/shapes/ball10.png"),
+  "ball11": require("@/assets/images/shapes/ball11.png"),
+  "ball12": require("@/assets/images/shapes/ball12.png"),
+  "ball13": require("@/assets/images/shapes/ball13.png"),
+  "ball14": require("@/assets/images/shapes/ball14.png"),
+  "ball15": require("@/assets/images/shapes/ball15.png"),
+  "ball16": require("@/assets/images/shapes/ball16.png"),
+  "ball17": require("@/assets/images/shapes/ball17.png"),
+  "ball18": require("@/assets/images/shapes/ball18.png"),
+  "ball19": require("@/assets/images/shapes/ball19.png"),
+  "ball2": require("@/assets/images/shapes/ball2.png"),
+  "ball3": require("@/assets/images/shapes/ball3.png"),
+  "ball4": require("@/assets/images/shapes/ball4.png"),
+  "ball5": require("@/assets/images/shapes/ball5.png"),
+  "ball6": require("@/assets/images/shapes/ball6.png"),
+  "ball7": require("@/assets/images/shapes/ball7.png"),
+  "ball8": require("@/assets/images/shapes/ball8.png"),
+  "ball9": require("@/assets/images/shapes/ball9.png"),
+  "frame0": require("@/assets/images/shapes/frame0.png"),
+  "frame1": require("@/assets/images/shapes/frame1.png"),
+  "frame10": require("@/assets/images/shapes/frame10.png"),
+  "frame11": require("@/assets/images/shapes/frame11.png"),
+  "frame12": require("@/assets/images/shapes/frame12.png"),
+  "frame13": require("@/assets/images/shapes/frame13.png"),
+  "frame14": require("@/assets/images/shapes/frame14.png"),
+  "frame15": require("@/assets/images/shapes/frame15.png"),
+  "frame16": require("@/assets/images/shapes/frame16.png"),
+  "frame2": require("@/assets/images/shapes/frame2.png"),
+  "frame3": require("@/assets/images/shapes/frame3.png"),
+  "frame4": require("@/assets/images/shapes/frame4.png"),
+  "frame5": require("@/assets/images/shapes/frame5.png"),
+  "frame6": require("@/assets/images/shapes/frame6.png"),
+  "frame7": require("@/assets/images/shapes/frame7.png"),
+  "frame8": require("@/assets/images/shapes/frame8.png"),
+  "frame9": require("@/assets/images/shapes/frame9.png"),
+};
 
 function SpriteIcon({ shape, type, color, active }: { shape: string, type: 'body' | 'frame' | 'ball', color: string, active: boolean }) {
   const coords = SPRITE_COORDINATES[shape];
+  
+  if (type !== 'body' && SHAPE_IMAGES[shape]) {
+    return (
+      <View style={{ width: 45, height: 45, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+        <Image 
+          source={SHAPE_IMAGES[shape]} 
+          style={{
+            width: 40,
+            height: 40,
+            tintColor: color
+          }}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
+
   if (!coords) return null;
   
   const source = require('@/assets/images/sprite-shapes-alpha.png');
@@ -75,7 +147,7 @@ function SpriteIcon({ shape, type, color, active }: { shape: string, type: 'body
   // RN Image tintColor replaces all non-transparent pixels with the color. That's perfect for our sprites!
   
   // The scale for body is 0.5 (90->45, 80->40). The frames/balls are 50x50.
-  const scale = type === 'body' ? 0.5 : 0.8;
+  const scale = 0.5;
   const viewWidth = coords.w * scale;
   const viewHeight = coords.h * scale;
 
@@ -84,8 +156,8 @@ function SpriteIcon({ shape, type, color, active }: { shape: string, type: 'body
       <Image 
         source={source} 
         style={{
-          width: type === 'body' ? 680 * scale : 550 * scale,
-          height: type === 'body' ? 630 * scale : 660 * scale,
+          width: 680 * scale,
+          height: 630 * scale,
           marginLeft: coords.x * scale,
           marginTop: coords.y * scale,
           tintColor: color
@@ -231,17 +303,14 @@ function ColorPickerBlock({
           <View style={{ width: '85%', backgroundColor: C.surface, borderRadius: 16, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 10 }}>
             <Text style={[styles.fieldLabel, { color: C.onSurface, marginBottom: 16, textAlign: 'center' }]}>CHOOSE {title}</Text>
             
-            <ColorPicker
+            <HSLColorEditor
               value={value}
-              onComplete={({ hex }) => {
-                onChange(hex.toUpperCase());
-                setHexDraft(hex.toUpperCase());
+              onChange={hex => {
+                onChange(hex);
+                setHexDraft(hex);
               }}
-              style={{ width: '100%', gap: 20 }}
-            >
-              <Panel1 />
-              <HueSlider />
-            </ColorPicker>
+              C={C}
+            />
             
             <Pressable style={[styles.saveBtn, { backgroundColor: C.primary, marginTop: 24 }]} onPress={() => setShowPicker(false)}>
               <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>Close</Text>
@@ -400,6 +469,37 @@ export default function CreateScreen() {
   const { colors: C, isDark } = useTheme();
   const { addItem } = useQRHistory();
 
+  const qrWebViewRef = useRef<WebView>(null);
+  const pendingQRCallback = useRef<{ resolve: (dataUri: string) => void; reject: (e: Error) => void; id: number } | null>(null);
+  const nextRequestId = useRef(0);
+  const [webViewReady, setWebViewReady] = useState(false);
+
+  /** Generate QR code locally via embedded qr-code-styling in the hidden WebView. */
+  function generateQRLocally(opts: {
+    data: string; fgColor: string; bgColor: string; transparent: boolean;
+    dotsType: string; cornersSquareType: string; cornersDotType: string;
+    logo?: string; logoMargin?: number; margin?: number; size: number; rounded?: boolean;
+  }): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!qrWebViewRef.current) { reject(new Error('WebView not ready')); return; }
+      const id = ++nextRequestId.current;
+      // Cancel any previous pending request so it doesn't leave a stuck loading state
+      const prev = pendingQRCallback.current;
+      if (prev) { pendingQRCallback.current = null; prev.reject(new Error('cancelled')); }
+      pendingQRCallback.current = { resolve, reject, id };
+      const msg = JSON.stringify({ type: 'generate', requestId: id, ...opts });
+      qrWebViewRef.current.injectJavaScript(
+        `(function(){window.dispatchEvent(new MessageEvent('message',{data:${JSON.stringify(msg)}}));})();true;`
+      );
+      setTimeout(() => {
+        if (pendingQRCallback.current?.id === id) {
+          pendingQRCallback.current = null;
+          reject(new Error('QR generation timed out'));
+        }
+      }, 10000);
+    });
+  }
+
   const [activeTab, setActiveTab] = useState<TabId>('content');
   const [qrType, setQrType] = useState<QRType>('url');
   const [config, setConfig] = useState<ExtendedQRConfig>({ ...DEFAULT_QR_CONFIG, logoRadius: 0, logoMargin: 0 });
@@ -493,66 +593,40 @@ export default function CreateScreen() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const fetchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchQRCode = useCallback(async (nextConfig: ExtendedQRConfig, data: string) => {
+  async function generatePreview(nextConfig: ExtendedQRConfig, data: string) {
+    if (!webViewReady) return;
     try {
       setPreviewLoading(true);
-      const payload = {
+      const dataUri = await generateQRLocally({
         data: data || 'https://example.com',
-        config: {
-          body: nextConfig.dotsStyle,
-          eye: nextConfig.cornerSquareStyle,
-          eyeBall: nextConfig.cornerDotStyle,
-          bodyColor: nextConfig.fgColor,
-          bgColor: nextConfig.transparentBg ? '#FFFFFF' : nextConfig.bgColor,
-          eye1Color: nextConfig.fgColor,
-          eye2Color: nextConfig.fgColor,
-          eye3Color: nextConfig.fgColor,
-          eyeBall1Color: nextConfig.fgColor,
-          eyeBall2Color: nextConfig.fgColor,
-          eyeBall3Color: nextConfig.fgColor,
-          logo: nextConfig.logo || ''
-        },
-        size: 1024,
-        download: false,
-        file: 'png'
-      };
-
-      const res = await fetch('https://api.qrcode-monkey.com/qr/custom', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Origin': 'https://www.qrcode-monkey.com',
-          'Referer': 'https://www.qrcode-monkey.com/'
-        },
-        body: JSON.stringify(payload)
+        fgColor: nextConfig.fgColor,
+        bgColor: nextConfig.bgColor,
+        transparent: nextConfig.transparentBg,
+        dotsType: mapDotsStyle(nextConfig.dotsStyle),
+        cornersSquareType: mapCornerSquareStyle(nextConfig.cornerSquareStyle),
+        cornersDotType: mapCornerDotStyle(nextConfig.cornerDotStyle),
+        logo: nextConfig.logo,
+        logoMargin: nextConfig.logoMargin,
+        margin: nextConfig.margin,
+        size: 512,
+        rounded: false,
       });
-      const blob = await res.blob();
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        setPreviewBase64(result);
-        setPreviewLoading(false);
-      };
-      reader.readAsDataURL(blob);
-    } catch (err) {
+      setPreviewBase64(dataUri);
+      setPreviewLoading(false);
+    } catch {
       setPreviewLoading(false);
     }
-  }, []);
+  }
 
   function sendQRUpdate(nextConfig: ExtendedQRConfig, data = currentContent) {
     if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
     fetchTimeout.current = setTimeout(() => {
-      fetchQRCode(nextConfig, data);
-    }, 400);
+      generatePreview(nextConfig, data);
+    }, 200);
   }
 
   function updateConfig(partial: Partial<ExtendedQRConfig>) {
-    setConfig(prev => {
-      const next = { ...prev, ...partial };
-      sendQRUpdate(next);
-      return next;
-    });
+    setConfig(prev => ({ ...prev, ...partial }));
   }
 
   function setQRSizePreset(nextPreset: QRSizePreset) {
@@ -564,7 +638,7 @@ export default function CreateScreen() {
 
   useEffect(() => {
     sendQRUpdate(config, currentContent);
-  }, [currentContent, config]);
+  }, [currentContent, config, webViewReady]);
 
   useFocusEffect(
     useCallback(() => {
@@ -608,73 +682,42 @@ export default function CreateScreen() {
     }
     setExporting(true);
     try {
-      // Re-fetch at requested size
-      const payload = {
+      const roundedDataUri = await generateQRLocally({
         data: currentContent,
-        config: {
-          body: config.dotsStyle,
-          eye: config.cornerSquareStyle,
-          eyeBall: config.cornerDotStyle,
-          bodyColor: config.fgColor,
-          bgColor: config.transparentBg ? '#FFFFFF' : config.bgColor,
-          eye1Color: config.fgColor,
-          eye2Color: config.fgColor,
-          eye3Color: config.fgColor,
-          eyeBall1Color: config.fgColor,
-          eyeBall2Color: config.fgColor,
-          eyeBall3Color: config.fgColor,
-          logo: config.logo || ''
-        },
+        fgColor: config.fgColor,
+        bgColor: config.bgColor,
+        transparent: config.transparentBg,
+        dotsType: mapDotsStyle(config.dotsStyle),
+        cornersSquareType: mapCornerSquareStyle(config.cornerSquareStyle),
+        cornersDotType: mapCornerDotStyle(config.cornerDotStyle),
+        logo: config.logo,
+        logoMargin: config.logoMargin,
+        margin: config.margin,
         size: config.qrSize,
-        download: false,
-        file: 'png'
-      };
-
-      const res = await fetch('https://api.qrcode-monkey.com/qr/custom', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Origin': 'https://www.qrcode-monkey.com',
-          'Referer': 'https://www.qrcode-monkey.com/'
-        },
-        body: JSON.stringify(payload)
+        rounded: true,
       });
-      const blob = await res.blob();
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const result = reader.result as string;
-          const base64 = result.split(',')[1];
-          const filename = `qr-${Date.now()}.png`;
-          const path = `${FileSystem.documentDirectory}${filename}`;
-          await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
-          
-          await addItem({
-            id: `qr-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            title: autoTitle,
-            type: qrType,
-            content: currentContent,
-            createdAt: Date.now(),
-            isScanned: false,
-            config,
-            localImagePath: path
-          });
-
-          const permission = await MediaLibrary.requestPermissionsAsync();
-          if (permission.granted) {
-            await MediaLibrary.saveToLibraryAsync(path);
-            Alert.alert('Saved', 'The QR code was saved to your history and photos.');
-          } else {
-            Alert.alert('Saved to History', 'The QR code was saved to your history. Permission needed to save to photos.');
-          }
-          setExporting(false);
-        } catch (err: any) {
-          Alert.alert('Error', err.message ?? 'Failed to save the QR code.');
-          setExporting(false);
-        }
-      };
-      reader.readAsDataURL(blob);
+      const base64 = roundedDataUri.split(',')[1];
+      const filename = `qr-${Date.now()}.png`;
+      const path = `${FileSystem.documentDirectory}${filename}`;
+      await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
+      await addItem({
+        id: `qr-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        title: autoTitle,
+        type: qrType,
+        content: currentContent,
+        createdAt: Date.now(),
+        isScanned: false,
+        config,
+        localImagePath: path,
+      });
+      const permission = await MediaLibrary.requestPermissionsAsync();
+      if (permission.granted) {
+        await MediaLibrary.saveToLibraryAsync(path);
+        Alert.alert('Saved', 'The QR code was saved to your history and photos.');
+      } else {
+        Alert.alert('Saved to History', 'The QR code was saved to your history. Permission needed to save to photos.');
+      }
+      setExporting(false);
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'The QR code could not be exported.');
       setExporting(false);
@@ -707,10 +750,9 @@ export default function CreateScreen() {
         <Text style={[styles.headerTitle, { color: C.onSurface }]}>Create QR Code</Text>
       </View>
 
-      <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={86}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: 16 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
@@ -755,7 +797,7 @@ export default function CreateScreen() {
                   ))}
                 </ScrollView>
 
-                {qrType === 'url' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>URL</Text><TextInput style={[styles.input, styles.urlInput, inputStyle]} placeholder="https://example.com" placeholderTextColor={C.outline} value={urlValue} onChangeText={setUrlDraft} onBlur={() => setUrlDraft(urlValue)} keyboardType="url" autoCapitalize="none" autoCorrect={false} multiline numberOfLines={3} scrollEnabled /></>}
+                {qrType === 'url' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>URL</Text><TextInput style={[styles.input, styles.urlInput, inputStyle]} placeholder="https://example.com" placeholderTextColor={C.outline} value={urlValue} onChangeText={setUrlDraft} onBlur={() => setUrlDraft(urlValue)} keyboardType="url" autoCapitalize="none" autoCorrect={false} multiline numberOfLines={3} scrollEnabled returnKeyType="done" blurOnSubmit={true} onSubmitEditing={Keyboard.dismiss} /></>}
                 {qrType === 'text' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>TEXT</Text><TextInput style={[styles.input, styles.inputMulti, inputStyle]} placeholder="Your text here..." placeholderTextColor={C.outline} value={textValue} onChangeText={setTextValue} multiline numberOfLines={4} /></>}
                 {qrType === 'wifi' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>NETWORK NAME (SSID)</Text><TextInput style={[styles.input, inputStyle]} placeholder="My Wi-Fi" placeholderTextColor={C.outline} value={wifiSSID} onChangeText={setWifiSSID} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>PASSWORD</Text><TextInput style={[styles.input, inputStyle]} placeholder="Password" placeholderTextColor={C.outline} value={wifiPass} onChangeText={setWifiPass} secureTextEntry /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>ENCRYPTION</Text><View style={styles.radioRow}>{(['WPA', 'WEP', 'nopass'] as const).map(enc => <Pressable key={enc} style={[styles.radioBtn, { backgroundColor: C.white, borderColor: C.outlineVariant }, wifiEnc === enc && { backgroundColor: `${C.primary}18`, borderColor: C.primary }]} onPress={() => setWifiEnc(enc)}><Text style={[styles.radioBtnText, { color: wifiEnc === enc ? C.primary : C.onSurfaceVariant }]}>{enc}</Text></Pressable>)}</View></>}
                 {qrType === 'vcard' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>FIRST NAME</Text><TextInput style={[styles.input, inputStyle]} placeholder="Max" placeholderTextColor={C.outline} value={vcFirstName} onChangeText={setVcFirstName} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>LAST NAME</Text><TextInput style={[styles.input, inputStyle]} placeholder="Smith" placeholderTextColor={C.outline} value={vcLastName} onChangeText={setVcLastName} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>PHONE</Text><TextInput style={[styles.input, inputStyle]} placeholder="+49 123 456789" placeholderTextColor={C.outline} value={vcPhone} onChangeText={setVcPhone} keyboardType="phone-pad" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>E-MAIL</Text><TextInput style={[styles.input, inputStyle]} placeholder="max@example.com" placeholderTextColor={C.outline} value={vcEmail} onChangeText={setVcEmail} keyboardType="email-address" autoCapitalize="none" /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>COMPANY</Text><TextInput style={[styles.input, inputStyle]} placeholder="My Company Inc." placeholderTextColor={C.outline} value={vcCompany} onChangeText={setVcCompany} /><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>WEBSITE</Text><TextInput style={[styles.input, styles.urlInput, inputStyle]} placeholder="https://example.com" placeholderTextColor={C.outline} value={vcWebsite} onChangeText={setWebsiteDraft} onBlur={() => setWebsiteDraft(vcWebsite)} keyboardType="url" autoCapitalize="none" multiline numberOfLines={2} scrollEnabled /></>}
@@ -780,22 +822,42 @@ export default function CreateScreen() {
 
             {activeTab === 'design' && (
               <View style={{ gap: SPACING.md }}>
-                <Pressable style={styles.sectionToggle} onPress={() => setModuleStylesExpanded(value => !value)}>
-                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>MODULE STYLE</Text>
+                <Pressable style={styles.sectionToggle} onPress={() => setModuleStylesExpanded(v => !v)}>
+                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>DOT STYLE</Text>
                   <MaterialIcons name={moduleStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
                 </Pressable>
-                <View style={styles.styleGrid}>{visibleDotStyles.map(style => <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.dotsStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ dotsStyle: style.value })}><SpriteIcon shape={style.value} type='body' color={config.dotsStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.dotsStyle === style.value} /><Text style={[styles.styleBtnLabel, { color: config.dotsStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text></Pressable>)}</View>
-                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.sm }]} onPress={() => setCornerStylesExpanded(value => !value)}>
-                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>FRAME STYLE</Text>
+                <View style={styles.styleGrid}>
+                  {visibleDotStyles.map(style => (
+                    <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.dotsStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ dotsStyle: style.value })}>
+                      <SpriteIcon shape={style.value} type='body' color={config.dotsStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.dotsStyle === style.value} />
+                      <Text style={[styles.styleBtnLabel, { color: config.dotsStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.xs }]} onPress={() => setCornerStylesExpanded(v => !v)}>
+                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>CORNER FRAME</Text>
                   <MaterialIcons name={cornerStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
                 </Pressable>
-                <View style={styles.styleGrid}>{visibleCornerStyles.map(style => <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerSquareStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerSquareStyle: style.value })}><SpriteIcon shape={style.value} type='frame' color={config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerSquareStyle === style.value} /><Text style={[styles.styleBtnLabel, { color: config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text></Pressable>)}</View>
-                
-                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.sm }]} onPress={() => setBallStylesExpanded(value => !value)}>
-                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>EYEBALL STYLE</Text>
+                <View style={styles.styleGrid}>
+                  {visibleCornerStyles.map(style => (
+                    <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerSquareStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerSquareStyle: style.value })}>
+                      <SpriteIcon shape={style.icon ?? style.value} type='frame' color={config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerSquareStyle === style.value} />
+                      <Text style={[styles.styleBtnLabel, { color: config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.xs }]} onPress={() => setBallStylesExpanded(v => !v)}>
+                  <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>CORNER DOT</Text>
                   <MaterialIcons name={ballStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
                 </Pressable>
-                <View style={styles.styleGrid}>{visibleBallStyles.map(style => <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerDotStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerDotStyle: style.value })}><SpriteIcon shape={style.value} type='ball' color={config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerDotStyle === style.value} /><Text style={[styles.styleBtnLabel, { color: config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text></Pressable>)}</View>
+                <View style={styles.styleGrid}>
+                  {visibleBallStyles.map(style => (
+                    <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerDotStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerDotStyle: style.value })}>
+                      <SpriteIcon shape={style.icon ?? style.value} type='ball' color={config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerDotStyle === style.value} />
+                      <Text style={[styles.styleBtnLabel, { color: config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
                 <ValueSlider C={C} label="OUTER MARGIN" value={config.margin} min={0} max={180} suffix=" px" onChange={margin => updateConfig({ margin })} />
                 <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>QR SIZE</Text>
                 <View style={styles.sizePresetRow}>
@@ -845,7 +907,33 @@ export default function CreateScreen() {
           <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>{exporting ? 'Saving...' : 'Save to Photos'}</Text>
         </Pressable>
       </ScrollView>
-      </KeyboardAvoidingView>
+
+      {/* Hidden WebView — local QR generator using qr-code-styling (no API needed) */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}
+      >
+        <WebView
+          ref={qrWebViewRef}
+          style={{ width: 1, height: 1 }}
+          source={{ html: QR_GENERATOR_HTML }}
+          onLoad={() => setWebViewReady(true)}
+          onMessage={event => {
+            try {
+              const msg = JSON.parse(event.nativeEvent.data);
+              if (msg.type === 'qr_result') {
+                const cb = pendingQRCallback.current;
+                if (cb && cb.id === msg.requestId) { pendingQRCallback.current = null; cb.resolve(msg.data); }
+              } else if (msg.type === 'error') {
+                const cb = pendingQRCallback.current;
+                if (cb) { pendingQRCallback.current = null; cb.reject(new Error(msg.message ?? 'WebView error')); }
+              }
+            } catch {}
+          }}
+          javaScriptEnabled
+          originWhitelist={['*']}
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -870,6 +958,7 @@ const styles = StyleSheet.create({
   tabPanel: { padding: SPACING.sm },
   contentPanel: { gap: SPACING.sm, borderWidth: 1, borderRadius: RADIUS.xl, padding: SPACING.md },
   fieldLabel: { ...TYPOGRAPHY.labelSm, letterSpacing: 0.6, marginBottom: SPACING.sm },
+  sectionToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 28 },
   input: { height: 46, borderWidth: 1, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: 0, textAlignVertical: 'center', ...TYPOGRAPHY.bodyMd, lineHeight: 22 },
   urlInput: { height: 82, maxHeight: 120, paddingTop: SPACING.sm, paddingBottom: SPACING.sm, textAlignVertical: 'top' },
   inputMulti: { height: 96, paddingTop: SPACING.sm, textAlignVertical: 'top' },
@@ -882,7 +971,6 @@ const styles = StyleSheet.create({
   styleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, justifyContent: 'center' },
   styleBtn: { width: 92, height: 80, borderRadius: RADIUS.xl, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.xs },
   styleBtnLabel: { ...TYPOGRAPHY.labelSm, textAlign: 'center' },
-  sectionToggle: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sizePresetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
   sizePresetBtn: { flex: 1, minWidth: 78, borderRadius: RADIUS.lg, borderWidth: 1, paddingVertical: SPACING.sm, alignItems: 'center', justifyContent: 'center' },
   sizePresetLabel: { ...TYPOGRAPHY.labelMd },

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QRPoint — Pattern Tester</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0effe;color:#1a1a2e;padding:20px;min-height:100vh}
+h1{font-size:20px;font-weight:700;color:#4648d4;margin-bottom:20px}
+.layout{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.controls{flex:1;min-width:280px;max-width:360px}
+.preview-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;position:sticky;top:20px}
+.card{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 2px 12px rgba(70,72,212,.08)}
+.card h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#888;margin-bottom:10px}
+input[type=url],input[type=text]{width:100%;padding:9px 12px;border:1.5px solid #e0e0ef;border-radius:9px;font-size:15px;outline:none;transition:border-color .2s}
+input[type=url]:focus,input[type=text]:focus{border-color:#4648d4}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.style-btn{aspect-ratio:1;border:2px solid #e0e0ef;border-radius:9px;background:#fafafa;cursor:pointer;padding:5px;display:flex;align-items:center;justify-content:center;transition:border-color .2s,background .2s}
+.style-btn:hover{border-color:#a0a4f0}
+.style-btn.active{border-color:#4648d4;background:#f0effe}
+.style-btn svg{width:100%;height:100%}
+.color-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.color-row label{font-size:13px;flex:1;color:#444}
+.color-row input[type=color]{width:40px;height:32px;border:1.5px solid #e0e0ef;border-radius:7px;cursor:pointer;padding:2px;background:#fff}
+.qr-preview{width:260px;height:260px;background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(70,72,212,.15);overflow:hidden}
+.qr-preview svg{width:100%;height:100%}
+.btn-row{display:flex;gap:8px}
+.btn{padding:10px 18px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn-primary{background:#4648d4;color:#fff}
+.btn-secondary{background:#e8e7ff;color:#4648d4}
+.lbl{font-size:11px;color:#888;margin-bottom:5px;font-weight:500}
+select{width:100%;padding:8px 10px;border:1.5px solid #e0e0ef;border-radius:9px;font-size:13px;outline:none;appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E") no-repeat right 10px center;cursor:pointer}
+.sep{height:1px;background:#f0effe;margin:10px 0}
+#status{font-size:12px;color:#888;text-align:center;height:16px}
+</style>
+</head>
+<body>
+<h1>QRPoint — Pattern Tester</h1>
+<div class="layout">
+  <div class="controls">
+
+    <div class="card">
+      <h3>Inhalt</h3>
+      <input type="url" id="content" value="https://qrpoint.app" placeholder="https://...">
+    </div>
+
+    <div class="card">
+      <h3>Body-Stil</h3>
+      <div class="grid4" id="body-grid"></div>
+    </div>
+
+    <div class="card">
+      <h3>Ecken-Rahmen</h3>
+      <div class="grid4" id="frame-grid"></div>
+    </div>
+
+    <div class="card">
+      <h3>Ecken-Punkt</h3>
+      <div class="grid4" id="ball-grid"></div>
+    </div>
+
+    <div class="card">
+      <h3>Farben</h3>
+      <div class="color-row"><label>Vordergrund</label><input type="color" id="c-fg" value="#000000"></div>
+      <div class="color-row"><label>Hintergrund</label><input type="color" id="c-bg" value="#ffffff"></div>
+      <div class="color-row"><label>Ecken</label><input type="color" id="c-eye" value="#4648d4"></div>
+      <div class="sep"></div>
+      <div class="lbl">Fehlerkorrektur</div>
+      <select id="ecl">
+        <option value="M">M — Standard</option>
+        <option value="L">L — Niedrig</option>
+        <option value="Q">Q — Hoch</option>
+        <option value="H">H — Maximum (für Logos)</option>
+      </select>
+    </div>
+
+  </div>
+
+  <div class="preview-wrap">
+    <div class="qr-preview" id="qr-out"></div>
+    <div id="status"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="dlSVG()">SVG</button>
+      <button class="btn btn-secondary" onclick="dlPNG()">PNG 1024px</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================================================================
+// PART 1 — QR MATRIX GENERATOR (Kazuhiko Arase algorithm, MIT)
+// ================================================================
+const QRGen = (() => {
+  // GF(256)
+  const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
+  EXP[0] = 1;
+  for (let i = 1; i < 255; i++) { let v = EXP[i-1]*2; EXP[i] = v>=256 ? v^0x11D : v; }
+  for (let i = 0; i < 255; i++) LOG[EXP[i]] = i;
+  for (let i = 255; i < 512; i++) EXP[i] = EXP[i-255];
+  const gm = (a,b) => (!a||!b) ? 0 : EXP[LOG[a]+LOG[b]];
+
+  function rsGen(n) {
+    let g=[1];
+    for (let i=0;i<n;i++) {
+      const p=[1,EXP[i]], r=new Array(g.length+1).fill(0);
+      for (let j=0;j<g.length;j++) for (let k=0;k<2;k++) r[j+k]^=gm(g[j],p[k]);
+      g=r;
+    }
+    return g;
+  }
+  function rsEnc(data, ecLen) {
+    const g=rsGen(ecLen), msg=[...data,...new Array(ecLen).fill(0)];
+    for (let i=0;i<data.length;i++) { const c=msg[i]; if(c) for(let j=0;j<g.length;j++) msg[i+j]^=gm(g[j],c); }
+    return msg.slice(data.length);
+  }
+
+  // RS block table [count,total,data,...] for versions 1-10, levels L/M/Q/H
+  const RSB = [
+    [1,26,19],[1,26,16],[1,26,13],[1,26,9],
+    [1,44,34],[1,44,28],[1,44,22],[1,44,16],
+    [1,70,55],[1,70,44],[2,35,17],[2,35,13],
+    [1,100,80],[2,50,32],[2,50,24],[4,25,9],
+    [1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],
+    [2,86,68],[4,43,27],[4,43,19],[4,43,15],
+    [2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],
+    [2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],
+    [2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],
+    [2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],
+  ];
+  const ALIGN = [[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50]];
+  const ECIDX = {L:0,M:1,Q:2,H:3};
+  const ECFMT = {L:1,M:0,Q:3,H:2};
+  const REM = [0,7,7,7,7,7,0,0,0,0];
+
+  function cap(v, ecl) {
+    const b=RSB[(v-1)*4+ECIDX[ecl]]; let t=0;
+    for (let i=0;i<b.length;i+=3) t+=b[i]*b[i+2];
+    return t;
+  }
+  function pickVer(n, ecl) {
+    for (let v=1;v<=10;v++) if (cap(v,ecl)>=n+2) return v;
+    return null;
+  }
+
+  function bchBits(n) { let c=0; while(n){c++;n>>>=1;} return c; }
+  function bchFmt(d) { let x=d<<10; while(bchBits(x)-bchBits(0x537)>=0) x^=0x537<<(bchBits(x)-bchBits(0x537)); return (d<<10)|x; }
+  function bchVer(d) { let x=d<<12; while(bchBits(x)-bchBits(0x1F25)>=0) x^=0x1F25<<(bchBits(x)-bchBits(0x1F25)); return (d<<12)|x; }
+
+  function maskFn(m,r,c) {
+    switch(m){
+      case 0: return (r+c)%2===0;
+      case 1: return r%2===0;
+      case 2: return c%3===0;
+      case 3: return (r+c)%3===0;
+      case 4: return (Math.floor(r/2)+Math.floor(c/3))%2===0;
+      case 5: return (r*c)%2+(r*c)%3===0;
+      case 6: return ((r*c)%2+(r*c)%3)%2===0;
+      case 7: return ((r+c)%2+(r*c)%3)%2===0;
+    }
+  }
+
+  function generate(content, ecl='M') {
+    const bytes = [...new TextEncoder().encode(content)];
+    const ver = pickVer(bytes.length, ecl);
+    if (!ver) return null;
+    const sz = 4*ver+17;
+    const M = Array.from({length:sz},()=>new Array(sz).fill(null));
+    const F = Array.from({length:sz},()=>new Array(sz).fill(false));
+
+    function finder(r,c) {
+      for (let dr=-1;dr<=7;dr++) for (let dc=-1;dc<=7;dc++) {
+        const rr=r+dr,cc=c+dc;
+        if(rr<0||rr>=sz||cc<0||cc>=sz) continue;
+        if(dr<0||dr>6||dc<0||dc>6) { M[rr][cc]=false; }
+        else M[rr][cc]=(dr===0||dr===6||dc===0||dc===6||(dr>=2&&dr<=4&&dc>=2&&dc<=4));
+        F[rr][cc]=true;
+      }
+    }
+    finder(0,0); finder(0,sz-7); finder(sz-7,0);
+
+    // Timing
+    for (let i=8;i<sz-8;i++) {
+      if(!F[6][i]){M[6][i]=i%2===0;F[6][i]=true;}
+      if(!F[i][6]){M[i][6]=i%2===0;F[i][6]=true;}
+    }
+
+    // Alignment
+    const ap=ALIGN[ver-1];
+    for (const ar of ap) for (const ac of ap) {
+      if(F[ar][ac]) continue;
+      for (let dr=-2;dr<=2;dr++) for (let dc=-2;dc<=2;dc++) {
+        M[ar+dr][ac+dc]=(dr===-2||dr===2||dc===-2||dc===2||(dr===0&&dc===0));
+        F[ar+dr][ac+dc]=true;
+      }
+    }
+
+    // Reserve format areas
+    for (let i=0;i<=8;i++){F[8][i]=true;F[i][8]=true;}
+    for (let i=sz-8;i<sz;i++) F[8][i]=true;
+    for (let i=sz-7;i<sz;i++) F[i][8]=true;
+    F[sz-8][8]=true;
+
+    // Version info (v7+)
+    if (ver>=7) {
+      const vi=bchVer(ver);
+      for (let i=0;i<18;i++) {
+        const b=(vi>>i)&1;
+        M[Math.floor(i/3)][i%3+sz-11]=b===1; F[Math.floor(i/3)][i%3+sz-11]=true;
+        M[i%3+sz-11][Math.floor(i/3)]=b===1; F[i%3+sz-11][Math.floor(i/3)]=true;
+      }
+    }
+
+    // Build data codewords
+    const bspec=RSB[(ver-1)*4+ECIDX[ecl]];
+    const totalDC=cap(ver,ecl);
+    const bits=[];
+    bits.push(0,1,0,0); // byte mode
+    for (let i=7;i>=0;i--) bits.push((bytes.length>>i)&1);
+    for (const b of bytes) for (let i=7;i>=0;i--) bits.push((b>>i)&1);
+    const total=totalDC*8;
+    for (let i=0;i<4&&bits.length<total;i++) bits.push(0);
+    while(bits.length%8!==0) bits.push(0);
+    const pad=[0xEC,0x11]; let pi=0;
+    while(bits.length<total){const pb=pad[pi++%2];for(let i=7;i>=0;i--)bits.push((pb>>i)&1);}
+
+    const db=[]; for(let i=0;i<bits.length;i+=8){let b=0;for(let j=0;j<8;j++)b=(b<<1)|bits[i+j];db.push(b);}
+
+    const blocks=[],ecblocks=[];
+    let di=0;
+    for (let i=0;i<bspec.length;i+=3) {
+      const cnt=bspec[i],tot=bspec[i+1],dat=bspec[i+2],ec=tot-dat;
+      for (let j=0;j<cnt;j++){const d=db.slice(di,di+dat);blocks.push(d);ecblocks.push(rsEnc(d,ec));di+=dat;}
+    }
+
+    const stream=[];
+    const maxD=Math.max(...blocks.map(b=>b.length));
+    for (let i=0;i<maxD;i++) for (const b of blocks) if(i<b.length) stream.push(b[i]);
+    const maxE=Math.max(...ecblocks.map(b=>b.length));
+    for (let i=0;i<maxE;i++) for (const b of ecblocks) if(i<b.length) stream.push(b[i]);
+    const sbits=[];
+    for (const b of stream) for(let i=7;i>=0;i--) sbits.push((b>>i)&1);
+    for (let i=0;i<REM[ver-1];i++) sbits.push(0);
+
+    function placeData(mask) {
+      let idx=0;
+      for (let c=sz-1;c>0;c-=2) {
+        if(c===6) c--;
+        for (let i=0;i<sz;i++) {
+          const r=(Math.floor(c/2)%2===0)?(sz-1-i):i;
+          for (let dx=0;dx<2;dx++) {
+            const col=c-dx;
+            if(!F[r][col]){const bit=idx<sbits.length?sbits[idx++]:0;M[r][col]=(bit===1)!==maskFn(mask,r,col);}
+          }
+        }
+      }
+    }
+
+    function placeFormat(mask) {
+      const fmt=bchFmt((ECFMT[ecl]<<3)|mask)^0x5412;
+      const p1=[[0,8],[1,8],[2,8],[3,8],[4,8],[5,8],[7,8],[8,8],[sz-7,8],[sz-6,8],[sz-5,8],[sz-4,8],[sz-3,8],[sz-2,8],[sz-1,8]];
+      const p2=[[8,sz-1],[8,sz-2],[8,sz-3],[8,sz-4],[8,sz-5],[8,sz-6],[8,sz-7],[8,sz-8],[8,7],[8,5],[8,4],[8,3],[8,2],[8,1],[8,0]];
+      for (let i=0;i<15;i++){const b=(fmt>>i)&1;M[p1[i][0]][p1[i][1]]=b===1;M[p2[i][0]][p2[i][1]]=b===1;}
+      M[sz-8][8]=true;
+    }
+
+    function penalty() {
+      let s=0;
+      for (let r=0;r<sz;r++){let rr=1,rc=1;for(let c=1;c<sz;c++){if(M[r][c]===M[r][c-1]){rr++;if(rr===5)s+=3;else if(rr>5)s++;}else rr=1;if(M[c][r]===M[c-1][r]){rc++;if(rc===5)s+=3;else if(rc>5)s++;}else rc=1;}}
+      for(let r=0;r<sz-1;r++)for(let c=0;c<sz-1;c++)if(M[r][c]===M[r+1][c]&&M[r][c]===M[r][c+1]&&M[r][c]===M[r+1][c+1])s+=3;
+      const pa=[1,0,1,1,1,0,1,0,0,0,0],pb=[0,0,0,0,1,0,1,1,1,0,1];
+      for(let r=0;r<sz;r++)for(let c=0;c<sz-10;c++){if(pa.every((v,i)=>(M[r][c+i]?1:0)===v))s+=40;if(pb.every((v,i)=>(M[r][c+i]?1:0)===v))s+=40;if(pa.every((v,i)=>(M[c+i][r]?1:0)===v))s+=40;if(pb.every((v,i)=>(M[c+i][r]?1:0)===v))s+=40;}
+      let dark=0;for(let r=0;r<sz;r++)for(let c=0;c<sz;c++)if(M[r][c])dark++;
+      s+=Math.abs(Math.ceil(dark/(sz*sz)*100/5)*5-50)*2;
+      return s;
+    }
+
+    let best=Infinity,bestMask=0;
+    for (let m=0;m<8;m++){placeData(m);placeFormat(m);const sc=penalty();if(sc<best){best=sc;bestMask=m;}}
+    placeData(bestMask);placeFormat(bestMask);
+
+    return { size:sz, isDark:(r,c)=>M[r][c]===true };
+  }
+
+  return { generate };
+})();
+
+// ================================================================
+// PART 2 — SVG RENDERER WITH CUSTOM SHAPES
+// ================================================================
+
+// Body styles
+const BODY_STYLES = {
+  square: {
+    label:'Quadrat',
+    draw(x,y,s,_n,fg){ return `<rect x="${x}" y="${y}" width="${s}" height="${s}" fill="${fg}"/>`; }
+  },
+  circle: {
+    label:'Kreis',
+    draw(x,y,s,_n,fg){ const r=s*0.46,cx=x+s/2,cy=y+s/2; return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fg}"/>`; }
+  },
+  rounded: {
+    label:'Abgerundet',
+    draw(x,y,s,_n,fg){ const r=s*0.35; return `<rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${r}" fill="${fg}"/>`; }
+  },
+  flowing: {
+    label:'Fließend',
+    draw(x,y,s,n,fg){
+      // n = neighbor bitmask: bit0=top bit1=right bit2=bottom bit3=left
+      const hasT=(n&1)!==0,hasR=(n&2)!==0,hasB=(n&4)!==0,hasL=(n&8)!==0;
+      const r=s*0.42;
+      const tlS=hasT&&hasL,trS=hasT&&hasR,brS=hasB&&hasR,blS=hasB&&hasL;
+      const x1=x+s,y1=y+s;
+      let d=`M${x+(tlS?0:r)},${y}`;
+      d+=` H${x1-(trS?0:r)}`;
+      if(!trS)d+=` Q${x1},${y} ${x1},${y+r}`; else d+=` L${x1},${y}`;
+      d+=` V${y1-(brS?0:r)}`;
+      if(!brS)d+=` Q${x1},${y1} ${x1-r},${y1}`; else d+=` L${x1},${y1}`;
+      d+=` H${x+(blS?0:r)}`;
+      if(!blS)d+=` Q${x},${y1} ${x},${y1-r}`; else d+=` L${x},${y1}`;
+      d+=` V${y+(tlS?0:r)}`;
+      if(!tlS)d+=` Q${x},${y} ${x+r},${y}`; else d+=` L${x},${y}`;
+      d+=`Z`;
+      return `<path d="${d}" fill="${fg}"/>`;
+    }
+  },
+  diamond: {
+    label:'Diamant',
+    draw(x,y,s,_n,fg){ const cx=x+s/2,cy=y+s/2,h=s*0.48; return `<polygon points="${cx},${cy-h} ${cx+h},${cy} ${cx},${cy+h} ${cx-h},${cy}" fill="${fg}"/>`; }
+  },
+  star: {
+    label:'Stern',
+    draw(x,y,s,_n,fg){
+      const cx=x+s/2,cy=y+s/2,ro=s*0.45,ri=s*0.2,n=5;
+      let pts='';
+      for(let i=0;i<n*2;i++){const a=Math.PI/n*i-Math.PI/2,r=i%2===0?ro:ri;pts+=`${cx+Math.cos(a)*r},${cy+Math.sin(a)*r} `;}
+      return `<polygon points="${pts.trim()}" fill="${fg}"/>`;
+    }
+  },
+  cross: {
+    label:'Kreuz',
+    draw(x,y,s,_n,fg){
+      const t=s*0.3,o=(s-t)/2;
+      return `<path d="M${x+o},${y} h${t} v${o} h${o} v${t} h-${o} v${o} h-${t} v-${o} h-${o} v-${t} h${o} Z" fill="${fg}"/>`;
+    }
+  },
+  dots_small: {
+    label:'Punkte klein',
+    draw(x,y,s,_n,fg){ const r=s*0.3,cx=x+s/2,cy=y+s/2; return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fg}"/>`; }
+  },
+};
+
+// Eye frame (outer 7×7 ring) styles
+const FRAME_STYLES = {
+  square: {
+    label:'Quadrat',
+    draw(x,y,cs,fg){
+      const w=7*cs,g=cs;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${w}" fill="${fg}"/>`+
+             `<rect x="${x+g}" y="${y+g}" width="${w-2*g}" height="${w-2*g}" fill="var(--bg)"/>`;
+    }
+  },
+  rounded: {
+    label:'Abgerundet',
+    draw(x,y,cs,fg){
+      const w=7*cs,g=cs,r=cs*1.2,ri=cs*0.6;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="${r}" fill="${fg}"/>`+
+             `<rect x="${x+g}" y="${y+g}" width="${w-2*g}" height="${w-2*g}" rx="${ri}" fill="var(--bg)"/>`;
+    }
+  },
+  circle: {
+    label:'Kreis',
+    draw(x,y,cs,fg){
+      const cx=x+3.5*cs,cy=y+3.5*cs,ro=3.5*cs,ri=2.5*cs;
+      return `<circle cx="${cx}" cy="${cy}" r="${ro}" fill="${fg}"/>`+
+             `<circle cx="${cx}" cy="${cy}" r="${ri}" fill="var(--bg)"/>`;
+    }
+  },
+  leaf: {
+    label:'Leaf',
+    draw(x,y,cs,fg){
+      const w=7*cs,g=cs,r=cs*2.5,ri=cs*0.5;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${w}" rx="${r}" fill="${fg}"/>`+
+             `<rect x="${x+g}" y="${y+g}" width="${w-2*g}" height="${w-2*g}" rx="${ri}" fill="var(--bg)"/>`;
+    }
+  },
+};
+
+// Eye ball (inner 3×3 dot) styles
+const BALL_STYLES = {
+  square: {
+    label:'Quadrat',
+    draw(x,y,cs,fg){ return `<rect x="${x+2*cs}" y="${y+2*cs}" width="${3*cs}" height="${3*cs}" fill="${fg}"/>`; }
+  },
+  circle: {
+    label:'Kreis',
+    draw(x,y,cs,fg){ const cx=x+3.5*cs,cy=y+3.5*cs; return `<circle cx="${cx}" cy="${cy}" r="${1.5*cs}" fill="${fg}"/>`; }
+  },
+  rounded: {
+    label:'Abgerundet',
+    draw(x,y,cs,fg){ const r=cs*0.6; return `<rect x="${x+2*cs}" y="${y+2*cs}" width="${3*cs}" height="${3*cs}" rx="${r}" fill="${fg}"/>` }
+  },
+  diamond: {
+    label:'Diamant',
+    draw(x,y,cs,fg){ const cx=x+3.5*cs,cy=y+3.5*cs,h=1.5*cs; return `<polygon points="${cx},${cy-h} ${cx+h},${cy} ${cx},${cy+h} ${cx-h},${cy}" fill="${fg}"/>`; }
+  },
+};
+
+// SVG preview icons for pickers
+const ICON_BODY = {
+  square:`<svg viewBox="0 0 20 20"><rect x="2" y="2" width="4" height="4" fill="#333"/><rect x="8" y="2" width="4" height="4" fill="#333"/><rect x="14" y="2" width="4" height="4" fill="#333"/><rect x="2" y="8" width="4" height="4" fill="#333"/><rect x="14" y="8" width="4" height="4" fill="#333"/><rect x="2" y="14" width="4" height="4" fill="#333"/><rect x="8" y="14" width="4" height="4" fill="#333"/><rect x="14" y="14" width="4" height="4" fill="#333"/></svg>`,
+  circle:`<svg viewBox="0 0 20 20"><circle cx="4" cy="4" r="2" fill="#333"/><circle cx="10" cy="4" r="2" fill="#333"/><circle cx="16" cy="4" r="2" fill="#333"/><circle cx="4" cy="10" r="2" fill="#333"/><circle cx="16" cy="10" r="2" fill="#333"/><circle cx="4" cy="16" r="2" fill="#333"/><circle cx="10" cy="16" r="2" fill="#333"/><circle cx="16" cy="16" r="2" fill="#333"/></svg>`,
+  rounded:`<svg viewBox="0 0 20 20"><rect x="2" y="2" width="4" height="4" rx="1.5" fill="#333"/><rect x="8" y="2" width="4" height="4" rx="1.5" fill="#333"/><rect x="14" y="2" width="4" height="4" rx="1.5" fill="#333"/><rect x="2" y="8" width="4" height="4" rx="1.5" fill="#333"/><rect x="14" y="8" width="4" height="4" rx="1.5" fill="#333"/><rect x="2" y="14" width="4" height="4" rx="1.5" fill="#333"/><rect x="8" y="14" width="4" height="4" rx="1.5" fill="#333"/><rect x="14" y="14" width="4" height="4" rx="1.5" fill="#333"/></svg>`,
+  flowing:`<svg viewBox="0 0 20 20"><path d="M3,2 H5 Q6,2 6,3 V5 Q6,6 5,6 H3 Q2,6 2,5 V3 Q2,2 3,2Z" fill="#333"/><rect x="8" y="2" width="4" height="4" rx="1.2" fill="#333"/><path d="M14,2 H18 Q18,2 18,3 V5 Q18,6 17,6 H15 Q14,6 14,5 V3 Q14,2 14,2Z" fill="#333"/><rect x="2" y="8" width="4" height="4" rx="1.2" fill="#333"/><rect x="14" y="8" width="4" height="4" rx="1.2" fill="#333"/><rect x="2" y="14" width="4" height="4" rx="1.2" fill="#333"/><rect x="8" y="14" width="4" height="4" rx="1.2" fill="#333"/><rect x="14" y="14" width="4" height="4" rx="1.2" fill="#333"/></svg>`,
+  diamond:`<svg viewBox="0 0 20 20"><polygon points="4,2 6,4 4,6 2,4" fill="#333"/><polygon points="10,2 12,4 10,6 8,4" fill="#333"/><polygon points="16,2 18,4 16,6 14,4" fill="#333"/><polygon points="4,8 6,10 4,12 2,10" fill="#333"/><polygon points="16,8 18,10 16,12 14,10" fill="#333"/><polygon points="4,14 6,16 4,18 2,16" fill="#333"/><polygon points="10,14 12,16 10,18 8,16" fill="#333"/><polygon points="16,14 18,16 16,18 14,16" fill="#333"/></svg>`,
+  star:`<svg viewBox="0 0 20 20"><polygon points="4,2.2 4.5,3.5 5.8,3.5 4.8,4.3 5.2,5.6 4,4.8 2.8,5.6 3.2,4.3 2.2,3.5 3.5,3.5" fill="#333"/><polygon points="10,2.2 10.5,3.5 11.8,3.5 10.8,4.3 11.2,5.6 10,4.8 8.8,5.6 9.2,4.3 8.2,3.5 9.5,3.5" fill="#333"/><polygon points="16,2.2 16.5,3.5 17.8,3.5 16.8,4.3 17.2,5.6 16,4.8 14.8,5.6 15.2,4.3 14.2,3.5 15.5,3.5" fill="#333"/><polygon points="4,8.2 4.5,9.5 5.8,9.5 4.8,10.3 5.2,11.6 4,10.8 2.8,11.6 3.2,10.3 2.2,9.5 3.5,9.5" fill="#333"/><polygon points="16,8.2 16.5,9.5 17.8,9.5 16.8,10.3 17.2,11.6 16,10.8 14.8,11.6 15.2,10.3 14.2,9.5 15.5,9.5" fill="#333"/></svg>`,
+  cross:`<svg viewBox="0 0 20 20"><path d="M3.5,2.5h1.5v1.5h1.5v1.5h-1.5v1.5h-1.5v-1.5h-1.5v-1.5h1.5z" fill="#333"/><path d="M9.5,2.5h1.5v1.5h1.5v1.5h-1.5v1.5h-1.5v-1.5h-1.5v-1.5h1.5z" fill="#333"/><path d="M15.5,2.5h1.5v1.5h1.5v1.5h-1.5v1.5h-1.5v-1.5h-1.5v-1.5h1.5z" fill="#333"/></svg>`,
+  dots_small:`<svg viewBox="0 0 20 20"><circle cx="4" cy="4" r="1.5" fill="#333"/><circle cx="10" cy="4" r="1.5" fill="#333"/><circle cx="16" cy="4" r="1.5" fill="#333"/><circle cx="4" cy="10" r="1.5" fill="#333"/><circle cx="16" cy="10" r="1.5" fill="#333"/><circle cx="4" cy="16" r="1.5" fill="#333"/><circle cx="10" cy="16" r="1.5" fill="#333"/><circle cx="16" cy="16" r="1.5" fill="#333"/></svg>`,
+};
+const ICON_FRAME = {
+  square:`<svg viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" fill="#333"/><rect x="4" y="4" width="12" height="12" fill="white"/></svg>`,
+  rounded:`<svg viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" rx="4" fill="#333"/><rect x="4" y="4" width="12" height="12" rx="2" fill="white"/></svg>`,
+  circle:`<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#333"/><circle cx="10" cy="10" r="6" fill="white"/></svg>`,
+  leaf:`<svg viewBox="0 0 20 20"><rect x="2" y="2" width="16" height="16" rx="7" fill="#333"/><rect x="4" y="4" width="12" height="12" rx="2" fill="white"/></svg>`,
+};
+const ICON_BALL = {
+  square:`<svg viewBox="0 0 20 20"><rect x="6" y="6" width="8" height="8" fill="#333"/></svg>`,
+  circle:`<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="4" fill="#333"/></svg>`,
+  rounded:`<svg viewBox="0 0 20 20"><rect x="6" y="6" width="8" height="8" rx="2.5" fill="#333"/></svg>`,
+  diamond:`<svg viewBox="0 0 20 20"><polygon points="10,5 15,10 10,15 5,10" fill="#333"/></svg>`,
+};
+
+// State
+let state = { body:'flowing', frame:'rounded', ball:'circle', fg:'#000000', bg:'#ffffff', eye:'#4648d4', ecl:'M' };
+let lastSVG = '';
+
+function buildPicker(containerId, styles, icons, key) {
+  const el = document.getElementById(containerId);
+  Object.keys(styles).forEach(id => {
+    const btn = document.createElement('div');
+    btn.className = 'style-btn' + (state[key]===id ? ' active' : '');
+    btn.title = styles[id].label;
+    btn.innerHTML = icons[id] || '';
+    btn.onclick = () => { state[key]=id; document.querySelectorAll(`#${containerId} .style-btn`).forEach(b=>b.classList.remove('active')); btn.classList.add('active'); render(); };
+    el.appendChild(btn);
+  });
+}
+
+function isFinderModule(r, c, sz) {
+  // Top-left
+  if(r<=7&&c<=7) return true;
+  // Top-right
+  if(r<=7&&c>=sz-8) return true;
+  // Bottom-left
+  if(r>=sz-8&&c<=7) return true;
+  return false;
+}
+
+function render() {
+  const content = document.getElementById('content').value.trim() || 'https://qrpoint.app';
+  const ecl = document.getElementById('ecl').value;
+  const fg = document.getElementById('c-fg').value;
+  const bg = document.getElementById('c-bg').value;
+  const eye = document.getElementById('c-eye').value;
+
+  document.getElementById('status').textContent = 'Generiere…';
+
+  setTimeout(() => {
+    try {
+      const qr = QRGen.generate(content, ecl);
+      if (!qr) { document.getElementById('status').textContent = 'Inhalt zu lang!'; return; }
+
+      const sz = qr.size;
+      const pad = 4; // modules padding
+      const cellSize = 10;
+      const viewSize = (sz + pad*2) * cellSize;
+      const bodyStyle = BODY_STYLES[state.body];
+      const frameStyle = FRAME_STYLES[state.frame];
+      const ballStyle = BALL_STYLES[state.ball];
+
+      let parts = '';
+      parts += `<style>:root{--bg:${bg}}</style>`;
+      // Background
+      parts += `<rect width="${viewSize}" height="${viewSize}" fill="${bg}"/>`;
+
+      // Draw body modules (skip finder pattern area)
+      for (let r=0; r<sz; r++) {
+        for (let c=0; c<sz; c++) {
+          if (!qr.isDark(r,c)) continue;
+          if (isFinderModule(r,c,sz)) continue;
+
+          const x = (c+pad)*cellSize, y = (r+pad)*cellSize;
+          // Neighbor mask for flowing style
+          let n=0;
+          if(r>0&&qr.isDark(r-1,c)&&!isFinderModule(r-1,c,sz)) n|=1;
+          if(c<sz-1&&qr.isDark(r,c+1)&&!isFinderModule(r,c+1,sz)) n|=2;
+          if(r<sz-1&&qr.isDark(r+1,c)&&!isFinderModule(r+1,c,sz)) n|=4;
+          if(c>0&&qr.isDark(r,c-1)&&!isFinderModule(r,c-1,sz)) n|=8;
+
+          parts += bodyStyle.draw(x, y, cellSize, n, fg);
+        }
+      }
+
+      // Draw finder patterns (eyes)
+      const corners = [[0,0],[0,sz-7],[sz-7,0]];
+      for (const [fr,fc] of corners) {
+        const x=(fc+pad)*cellSize, y=(fr+pad)*cellSize;
+        parts += frameStyle.draw(x, y, cellSize, eye);
+        parts += ballStyle.draw(x, y, cellSize, eye);
+      }
+
+      const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewSize} ${viewSize}" width="${viewSize}" height="${viewSize}">${parts}</svg>`;
+      lastSVG = svgStr;
+
+      const out = document.getElementById('qr-out');
+      out.innerHTML = svgStr;
+      document.getElementById('status').textContent = `Version ${qr.version} · ${sz}×${sz} Module`;
+    } catch(e) {
+      document.getElementById('status').textContent = 'Fehler: ' + e.message;
+      console.error(e);
+    }
+  }, 0);
+}
+
+function dlSVG() {
+  if (!lastSVG) return;
+  const a = document.createElement('a');
+  a.href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(lastSVG);
+  a.download = 'qrpoint.svg';
+  a.click();
+}
+
+function dlPNG() {
+  if (!lastSVG) return;
+  const size = 1024;
+  const img = new Image();
+  const svg64 = btoa(unescape(encodeURIComponent(lastSVG)));
+  img.src = 'data:image/svg+xml;base64,' + svg64;
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, size, size);
+    const a = document.createElement('a');
+    a.href = c.toDataURL('image/png');
+    a.download = 'qrpoint.png';
+    a.click();
+  };
+}
+
+// Init
+buildPicker('body-grid', BODY_STYLES, ICON_BODY, 'body');
+buildPicker('frame-grid', FRAME_STYLES, ICON_FRAME, 'frame');
+buildPicker('ball-grid', BALL_STYLES, ICON_BALL, 'ball');
+
+document.getElementById('content').addEventListener('input', () => render());
+document.getElementById('ecl').addEventListener('change', () => render());
+['c-fg','c-bg','c-eye'].forEach(id => document.getElementById(id).addEventListener('input', () => render()));
+
+render();
+</script>
+</body>
+</html>
