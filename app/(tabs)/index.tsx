@@ -13,13 +13,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 import { Image } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SPACING, RADIUS, TYPOGRAPHY } from '@/constants/Theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useQRHistory } from '@/hooks/useQRHistory';
 import { QR_TYPE_LABELS, QR_TYPE_COLORS, QRHistoryItem, QRPreset } from '@/constants/QRTypes';
 import { useQRPresets } from '@/hooks/useQRPresets';
+import { buildQRPreviewHtml } from '@/utils/qrPreviewHtml';
 
 function RecentCard({ item, onPress, C }: { item: QRHistoryItem; onPress: () => void; C: any }) {
   const typeColor = QR_TYPE_COLORS[item.type];
@@ -78,13 +81,17 @@ function PresetCard({
     <View style={[styles.presetCard, { backgroundColor: C.white, borderColor: C.outlineVariant }]}>
       <Pressable style={styles.presetCardMain} onPress={onPress}>
         <View style={[styles.presetPreview, { backgroundColor: previewBg, borderColor: C.outlineVariant }]}>
-          <QRCode
-            value="https://example.com"
-            size={72}
-            color={preset.config.fgColor || '#000000'}
-            backgroundColor={previewBg}
-            ecl="H"
-          />
+          {preset.previewImagePath ? (
+            <Image source={{ uri: preset.previewImagePath }} style={styles.presetPreviewImage} resizeMode="contain" />
+          ) : (
+            <WebView
+              pointerEvents="none"
+              style={styles.presetPreviewWebView}
+              source={{ html: buildQRPreviewHtml('https://example.com', preset.config) }}
+              javaScriptEnabled
+              originWhitelist={['*']}
+            />
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.presetTitle, { color: C.onSurface }]} numberOfLines={1}>{preset.name}</Text>
@@ -208,7 +215,16 @@ export default function DashboardScreen() {
                   onPress={() => router.push({ pathname: '/create', params: { presetId: preset.id } })}
                   onDelete={() => Alert.alert('Delete preset?', `Remove "${preset.name}" from your presets?`, [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Delete', style: 'destructive', onPress: () => deletePreset(preset.id) },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        if (preset.previewImagePath) {
+                          await FileSystem.deleteAsync(preset.previewImagePath, { idempotent: true }).catch(() => {});
+                        }
+                        await deletePreset(preset.id);
+                      },
+                    },
                   ])}
                 />
               ))}
@@ -280,6 +296,8 @@ const styles = StyleSheet.create({
   presetCard: { width: 210, borderRadius: RADIUS.xxl, padding: SPACING.sm, paddingBottom: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   presetCardMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   presetPreview: { width: 88, height: 88, borderRadius: RADIUS.lg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 8, borderWidth: 1 },
+  presetPreviewImage: { width: '100%', height: '100%' },
+  presetPreviewWebView: { width: '100%', height: '100%', backgroundColor: 'transparent' },
   presetTitle: { ...TYPOGRAPHY.labelMd, marginBottom: 2 },
   presetMeta: { ...TYPOGRAPHY.labelSm },
   presetDeleteBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },

@@ -38,6 +38,7 @@ export function useQRPresets() {
       name: preset.name,
       createdAt: preset.createdAt ?? Date.now(),
       config: preset.config,
+      previewImagePath: preset.previewImagePath,
     };
 
     setPresets(prev => {

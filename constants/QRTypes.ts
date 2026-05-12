@@ -108,6 +108,7 @@ export interface QRPreset {
   name: string;
   createdAt: number;
   config: QRCodeConfig;
+  previewImagePath?: string;
 }
 
 export interface MeCardData {

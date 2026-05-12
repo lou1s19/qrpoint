@@ -714,6 +714,33 @@ export default function CreateScreen() {
 
   async function handleSavePreset() {
     const name = presetName.trim() || `Preset ${presets.length + 1}`;
+    let previewImagePath: string | undefined;
+
+    try {
+      const previewDataUri = await generateQRLocally({
+        data: currentContent || 'https://example.com',
+        fgColor: config.fgColor,
+        bgColor: config.bgColor,
+        transparent: config.transparentBg,
+        dotsType: mapDotsStyle(config.dotsStyle),
+        cornersSquareType: mapCornerSquareStyle(config.cornerSquareStyle),
+        cornersDotType: mapCornerDotStyle(config.cornerDotStyle),
+        logo: config.logo,
+        logoMargin: config.logoMargin,
+        margin: config.margin,
+        size: config.qrSize,
+        rounded: config.roundedCorners,
+        roundedCorners: config.roundedCorners,
+        cornerRadiusRatio: config.roundedCorners ? QR_CORNER_RADIUS_RATIO : 0,
+      });
+
+      const previewBase64 = previewDataUri.split(',')[1];
+      previewImagePath = `${FileSystem.documentDirectory}preset-preview-${Date.now()}.png`;
+      await FileSystem.writeAsStringAsync(previewImagePath, previewBase64, { encoding: FileSystem.EncodingType.Base64 });
+    } catch {
+      previewImagePath = undefined;
+    }
+
     await addPreset({
       name,
       config: {
@@ -721,6 +748,7 @@ export default function CreateScreen() {
         logoRadius: config.logoRadius ?? 0,
         logoMargin: config.logoMargin ?? 0,
       },
+      previewImagePath,
     });
     setPresetName('');
     setShowPresetModal(false);
