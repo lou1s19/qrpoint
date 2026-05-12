@@ -14,7 +14,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Image, Modal } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Clipboard from 'expo-clipboard';
@@ -34,11 +34,14 @@ import {
   QRCodeConfig,
   DEFAULT_QR_CONFIG,
   QR_TYPE_LABELS,
+  UNTESTED_QR_TYPES,
+  QRPreset,
   buildQRContent,
   isLikelyWebUrl,
   normalizeWebUrlContent,
 } from '@/constants/QRTypes';
 import { useQRHistory } from '@/hooks/useQRHistory';
+import { useQRPresets } from '@/hooks/useQRPresets';
 import { mapCornerSquareStyle, mapCornerDotStyle, mapDotsStyle } from '@/constants/QRStyleMapping';
 import { QR_GENERATOR_HTML } from '@/constants/QRGeneratorHTML';
 
@@ -48,6 +51,7 @@ type QRSizePreset = 'small' | 'medium' | 'large' | 'custom';
 type ExtendedQRConfig = QRCodeConfig & { logoRadius?: number };
 
 const CENTER_LOGO_SIZE = 0.15;
+const QR_CORNER_RADIUS_RATIO = 0.04;
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'content', label: 'Content' },
@@ -77,6 +81,7 @@ const BALL_STYLES: Array<{ value: CornerDotStyle; label: string; icon?: string }
 ];
 
 const QR_TYPES: QRType[] = ['url', 'text', 'email', 'phone', 'sms', 'vcard', 'mecard', 'location', 'facebook', 'twitter', 'youtube', 'event', 'crypto', 'wifi'];
+const UNAVAILABLE_QR_TYPES = new Set<QRType>(UNTESTED_QR_TYPES);
 const PRESET_FG = ['#4648d4', '#000000', '#1a1a2e', '#e63946', '#2d6a4f', '#f77f00', '#7b2d8b', '#0077b6', '#333333', '#c77dff'];
 const PRESET_BG = ['#ffffff', '#faf8ff', '#f0f0f0', '#e8f4fd', '#fff3e0', '#fce4ec', '#f3e5f5', '#e8f5e9', '#fffde7', '#000000'];
 
@@ -468,17 +473,20 @@ function HSLColorEditor({ value, onChange, C }: { value: string; onChange: (hex:
 export default function CreateScreen() {
   const { colors: C, isDark } = useTheme();
   const { addItem } = useQRHistory();
+  const { presets, addPreset } = useQRPresets();
+  const params = useLocalSearchParams<{ presetId?: string | string[] }>();
 
   const qrWebViewRef = useRef<WebView>(null);
   const pendingQRCallback = useRef<{ resolve: (dataUri: string) => void; reject: (e: Error) => void; id: number } | null>(null);
   const nextRequestId = useRef(0);
+  const appliedPresetRef = useRef<string | null>(null);
   const [webViewReady, setWebViewReady] = useState(false);
 
   /** Generate QR code locally via embedded qr-code-styling in the hidden WebView. */
   function generateQRLocally(opts: {
     data: string; fgColor: string; bgColor: string; transparent: boolean;
     dotsType: string; cornersSquareType: string; cornersDotType: string;
-    logo?: string; logoMargin?: number; margin?: number; size: number; rounded?: boolean;
+    logo?: string; logoMargin?: number; margin?: number; size: number; rounded?: boolean; roundedCorners?: boolean; cornerRadiusRatio?: number;
   }): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!qrWebViewRef.current) { reject(new Error('WebView not ready')); return; }
@@ -505,9 +513,9 @@ export default function CreateScreen() {
   const [config, setConfig] = useState<ExtendedQRConfig>({ ...DEFAULT_QR_CONFIG, logoRadius: 0, logoMargin: 0 });
   const [exporting, setExporting] = useState(false);
   const [moduleStylesExpanded, setModuleStylesExpanded] = useState(false);
-  const [cornerStylesExpanded, setCornerStylesExpanded] = useState(false);
-  const [ballStylesExpanded, setBallStylesExpanded] = useState(false);
   const [qrSizePreset, setQrSizePreset] = useState<QRSizePreset>('medium');
+  const [showPresetModal, setShowPresetModal] = useState(false);
+  const [presetName, setPresetName] = useState('');
   const lastClipboardPrompt = useRef<string | null>(null);
   const clipboardPromptShown = useRef(false);
 
@@ -572,10 +580,8 @@ export default function CreateScreen() {
   const effectiveBg = config.transparentBg ? '#ffffff' : config.bgColor;
   const contrast = useMemo(() => contrastRatio(config.fgColor, effectiveBg), [config.fgColor, effectiveBg]);
   const hasContrastWarning = contrast < 3;
-  const hasQuietZoneWarning = config.margin < 24;
   const visibleDotStyles = moduleStylesExpanded ? DOT_STYLES : DOT_STYLES.slice(0, 3);
-  const visibleCornerStyles = cornerStylesExpanded ? CORNER_STYLES : CORNER_STYLES.slice(0, 3);
-  const visibleBallStyles = ballStylesExpanded ? BALL_STYLES : BALL_STYLES.slice(0, 3);
+  const isUnavailableType = UNAVAILABLE_QR_TYPES.has(qrType);
   const autoTitle = useMemo(() => {
     switch (qrType) {
       case 'url': return urlValue.replace(/^https?:\/\//, '').split('/')[0] || 'URL QR';
@@ -609,7 +615,9 @@ export default function CreateScreen() {
         logoMargin: nextConfig.logoMargin,
         margin: nextConfig.margin,
         size: 512,
-        rounded: false,
+        rounded: nextConfig.roundedCorners,
+        roundedCorners: nextConfig.roundedCorners,
+        cornerRadiusRatio: nextConfig.roundedCorners ? QR_CORNER_RADIUS_RATIO : 0,
       });
       setPreviewBase64(dataUri);
       setPreviewLoading(false);
@@ -634,6 +642,22 @@ export default function CreateScreen() {
     if (nextPreset === 'small') updateConfig({ qrSize: 512 });
     if (nextPreset === 'medium') updateConfig({ qrSize: 1024 });
     if (nextPreset === 'large') updateConfig({ qrSize: 2048 });
+  }
+
+  function inferSizePreset(qrSize: number): QRSizePreset {
+    if (qrSize <= 512) return 'small';
+    if (qrSize <= 1024) return 'medium';
+    if (qrSize <= 2048) return 'large';
+    return 'custom';
+  }
+
+  function applyPresetConfig(preset: QRPreset) {
+    setQrSizePreset(inferSizePreset(preset.config.qrSize));
+    setConfig({
+      ...preset.config,
+      logoRadius: preset.config.logoRadius ?? 0,
+      logoMargin: preset.config.logoMargin ?? 0,
+    });
   }
 
   useEffect(() => {
@@ -675,6 +699,34 @@ export default function CreateScreen() {
     }, [])
   );
 
+  useEffect(() => {
+    const presetId = Array.isArray(params.presetId) ? params.presetId[0] : params.presetId;
+    if (!presetId) return;
+    if (appliedPresetRef.current === presetId) return;
+
+    const preset = presets.find(item => item.id === presetId);
+    if (!preset) return;
+
+    appliedPresetRef.current = presetId;
+    applyPresetConfig(preset);
+    setActiveTab('content');
+  }, [params.presetId, presets]);
+
+  async function handleSavePreset() {
+    const name = presetName.trim() || `Preset ${presets.length + 1}`;
+    await addPreset({
+      name,
+      config: {
+        ...config,
+        logoRadius: config.logoRadius ?? 0,
+        logoMargin: config.logoMargin ?? 0,
+      },
+    });
+    setPresetName('');
+    setShowPresetModal(false);
+    Alert.alert('Preset saved', `${name} is now available on the dashboard.`);
+  }
+
   async function handleSaveAndExport() {
     if (!currentContent) {
       Alert.alert('Heads up', 'Please enter content for the QR code.');
@@ -694,7 +746,9 @@ export default function CreateScreen() {
         logoMargin: config.logoMargin,
         margin: config.margin,
         size: config.qrSize,
-        rounded: true,
+        rounded: config.roundedCorners,
+        roundedCorners: config.roundedCorners,
+        cornerRadiusRatio: config.roundedCorners ? QR_CORNER_RADIUS_RATIO : 0,
       });
       const base64 = roundedDataUri.split(',')[1];
       const filename = `qr-${Date.now()}.png`;
@@ -765,12 +819,11 @@ export default function CreateScreen() {
 
           </View>
           <Text style={[styles.previewLabel, { color: C.onSurfaceVariant }]}>Live Preview</Text>
-          {(hasContrastWarning || hasQuietZoneWarning) && (
+          {hasContrastWarning && (
             <View style={[styles.warningCard, { backgroundColor: `${C.tertiary}18`, borderColor: C.tertiary }]}> 
               <MaterialIcons name="warning-amber" size={20} color={C.tertiary} />
               <Text style={[styles.warningText, { color: C.onSurface }]}>
-                {hasContrastWarning ? 'Low contrast may make this QR code harder to scan. ' : ''}
-                {hasQuietZoneWarning ? 'A margin below 32 px can also reduce scan reliability.' : ''}
+                Low contrast may make this QR code harder to scan.
               </Text>
             </View>
           )}
@@ -791,11 +844,38 @@ export default function CreateScreen() {
                 <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant }]}>TYPE</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeList}>
                   {QR_TYPES.map(type => (
-                    <Pressable key={type} style={[styles.typeBtn, { backgroundColor: C.white, borderColor: C.outlineVariant }, qrType === type && { backgroundColor: C.primary, borderColor: C.primary }]} onPress={() => setQrType(type)}>
-                      <Text style={[styles.typeBtnText, { color: qrType === type ? C.onPrimary : C.onSurfaceVariant }]}>{QR_TYPE_LABELS[type]}</Text>
+                    <Pressable
+                      key={type}
+                      disabled={UNAVAILABLE_QR_TYPES.has(type)}
+                      style={[
+                        styles.typeBtn,
+                        { backgroundColor: C.white, borderColor: C.outlineVariant },
+                        qrType === type && { backgroundColor: C.primary, borderColor: C.primary },
+                        UNAVAILABLE_QR_TYPES.has(type) && styles.typeBtnDisabled,
+                      ]}
+                      onPress={() => setQrType(type)}
+                    >
+                      <Text
+                        style={[
+                          styles.typeBtnText,
+                          { color: qrType === type ? C.onPrimary : C.onSurfaceVariant },
+                          UNAVAILABLE_QR_TYPES.has(type) && styles.typeBtnTextDisabled,
+                        ]}
+                      >
+                        {QR_TYPE_LABELS[type]}
+                      </Text>
                     </Pressable>
                   ))}
                 </ScrollView>
+
+                {isUnavailableType && (
+                  <View style={[styles.disabledNotice, { backgroundColor: `${C.outlineVariant}40`, borderColor: C.outlineVariant }]}>
+                    <MaterialIcons name="block" size={18} color={C.onSurfaceVariant} />
+                    <Text style={[styles.disabledNoticeText, { color: C.onSurfaceVariant }]}>
+                      Dieser Typ ist noch nicht getestet und deshalb deaktiviert.
+                    </Text>
+                  </View>
+                )}
 
                 {qrType === 'url' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.sm }]}>URL</Text><TextInput style={[styles.input, styles.urlInput, inputStyle]} placeholder="https://example.com" placeholderTextColor={C.outline} value={urlValue} onChangeText={setUrlDraft} onBlur={() => setUrlDraft(urlValue)} keyboardType="url" autoCapitalize="none" autoCorrect={false} multiline numberOfLines={3} scrollEnabled returnKeyType="done" blurOnSubmit={true} onSubmitEditing={Keyboard.dismiss} /></>}
                 {qrType === 'text' && <><Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginTop: SPACING.md }]}>TEXT</Text><TextInput style={[styles.input, styles.inputMulti, inputStyle]} placeholder="Your text here..." placeholderTextColor={C.outline} value={textValue} onChangeText={setTextValue} multiline numberOfLines={4} /></>}
@@ -834,24 +914,22 @@ export default function CreateScreen() {
                     </Pressable>
                   ))}
                 </View>
-                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.xs }]} onPress={() => setCornerStylesExpanded(v => !v)}>
+                <View style={[styles.sectionToggle, { marginTop: SPACING.xs }]}>
                   <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>CORNER FRAME</Text>
-                  <MaterialIcons name={cornerStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
-                </Pressable>
+                </View>
                 <View style={styles.styleGrid}>
-                  {visibleCornerStyles.map(style => (
+                  {CORNER_STYLES.map(style => (
                     <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerSquareStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerSquareStyle: style.value })}>
                       <SpriteIcon shape={style.icon ?? style.value} type='frame' color={config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerSquareStyle === style.value} />
                       <Text style={[styles.styleBtnLabel, { color: config.cornerSquareStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text>
                     </Pressable>
                   ))}
                 </View>
-                <Pressable style={[styles.sectionToggle, { marginTop: SPACING.xs }]} onPress={() => setBallStylesExpanded(v => !v)}>
+                <View style={[styles.sectionToggle, { marginTop: SPACING.xs }]}>
                   <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>CORNER DOT</Text>
-                  <MaterialIcons name={ballStylesExpanded ? 'expand-less' : 'expand-more'} size={22} color={C.onSurfaceVariant} />
-                </Pressable>
+                </View>
                 <View style={styles.styleGrid}>
-                  {visibleBallStyles.map(style => (
+                  {BALL_STYLES.map(style => (
                     <Pressable key={style.value} style={[styles.styleBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }, config.cornerDotStyle === style.value && { backgroundColor: `${C.primary}10`, borderColor: C.primary }]} onPress={() => updateConfig({ cornerDotStyle: style.value })}>
                       <SpriteIcon shape={style.icon ?? style.value} type='ball' color={config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant} active={config.cornerDotStyle === style.value} />
                       <Text style={[styles.styleBtnLabel, { color: config.cornerDotStyle === style.value ? C.primary : C.onSurfaceVariant }]}>{style.label}</Text>
@@ -859,6 +937,13 @@ export default function CreateScreen() {
                   ))}
                 </View>
                 <ValueSlider C={C} label="OUTER MARGIN" value={config.margin} min={0} max={180} suffix=" px" onChange={margin => updateConfig({ margin })} />
+                <View style={[styles.switchRow, { borderColor: C.outlineVariant, backgroundColor: C.surfaceContainerLow }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.switchTitle, { color: C.onSurface }]}>Rounded outer corners</Text>
+                    <Text style={[styles.switchSubtitle, { color: C.onSurfaceVariant }]}>Keeps the QR frame soft without clipping the edges when the margin is zero.</Text>
+                  </View>
+                  <Switch value={config.roundedCorners} onValueChange={roundedCorners => updateConfig({ roundedCorners })} trackColor={{ false: C.outlineVariant, true: C.primary }} thumbColor={C.white} />
+                </View>
                 <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>QR SIZE</Text>
                 <View style={styles.sizePresetRow}>
                   {([
@@ -902,11 +987,48 @@ export default function CreateScreen() {
           </View>
         </View>
 
-        <Pressable style={[styles.saveBtn, { backgroundColor: C.primary, shadowColor: C.primary }, exporting && styles.saveBtnDisabled]} onPress={handleSaveAndExport} disabled={exporting}>
-          {exporting ? <ActivityIndicator color={C.onPrimary} size="small" /> : <MaterialIcons name="download" size={22} color={C.onPrimary} />}
-          <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>{exporting ? 'Saving...' : 'Save to Photos'}</Text>
-        </Pressable>
+        <View style={styles.footerActions}>
+          <Pressable
+            style={[styles.presetBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }]}
+            onPress={() => {
+              setPresetName(autoTitle || 'My preset');
+              setShowPresetModal(true);
+            }}
+          >
+            <MaterialIcons name="bookmark-add" size={20} color={C.primary} />
+            <Text style={[styles.presetBtnText, { color: C.primary }]}>Save preset</Text>
+          </Pressable>
+          <Pressable style={[styles.saveBtn, styles.saveBtnInline, { backgroundColor: C.primary, shadowColor: C.primary }, exporting && styles.saveBtnDisabled]} onPress={handleSaveAndExport} disabled={exporting}>
+            {exporting ? <ActivityIndicator color={C.onPrimary} size="small" /> : <MaterialIcons name="download" size={22} color={C.onPrimary} />}
+            <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>{exporting ? 'Saving...' : 'Save to Photos'}</Text>
+          </Pressable>
+        </View>
       </ScrollView>
+
+      <Modal visible={showPresetModal} transparent animationType="fade" onRequestClose={() => setShowPresetModal(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: C.surface, borderColor: C.outlineVariant }]}>
+            <Text style={[styles.modalTitle, { color: C.onSurface }]}>Save preset</Text>
+            <Text style={[styles.modalSubtitle, { color: C.onSurfaceVariant }]}>Store the current design so you can reuse it from the dashboard.</Text>
+            <TextInput
+              style={[styles.presetInput, { color: C.onSurface, borderColor: C.outlineVariant, backgroundColor: C.surfaceContainerLowest }]}
+              value={presetName}
+              onChangeText={setPresetName}
+              placeholder="Preset name"
+              placeholderTextColor={C.outline}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <Pressable style={[styles.modalBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }]} onPress={() => setShowPresetModal(false)}>
+                <Text style={[styles.modalBtnText, { color: C.onSurfaceVariant }]}>Cancel</Text>
+              </Pressable>
+              <Pressable style={[styles.modalBtn, { backgroundColor: C.primary, borderColor: C.primary }]} onPress={handleSavePreset}>
+                <Text style={[styles.modalBtnText, { color: C.onPrimary }]}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Hidden WebView — local QR generator using qr-code-styling (no API needed) */}
       <View
@@ -965,6 +1087,10 @@ const styles = StyleSheet.create({
   typeList: { gap: SPACING.sm, paddingRight: SPACING.md, paddingVertical: 2 },
   typeBtn: { minHeight: 34, paddingHorizontal: SPACING.md, paddingVertical: 6, borderRadius: RADIUS.full, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   typeBtnText: { ...TYPOGRAPHY.labelMd },
+  typeBtnDisabled: { opacity: 0.4, borderStyle: 'dashed' },
+  typeBtnTextDisabled: { opacity: 0.75 },
+  disabledNotice: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, borderWidth: 1, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  disabledNoticeText: { ...TYPOGRAPHY.labelSm, flex: 1 },
   radioRow: { flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap' },
   radioBtn: { minHeight: 38, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, borderRadius: RADIUS.full, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   radioBtnText: { ...TYPOGRAPHY.labelMd },
@@ -1007,6 +1133,18 @@ const styles = StyleSheet.create({
   removeLogoBtn: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
   removeLogoText: { ...TYPOGRAPHY.labelMd },
   saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, marginHorizontal: SPACING.containerPadding, marginTop: SPACING.md, marginBottom: SPACING.sm, height: 48, borderRadius: RADIUS.xl, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  saveBtnInline: { marginHorizontal: 0, marginTop: 0, marginBottom: 0 },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { ...TYPOGRAPHY.headlineSm, fontSize: 16 },
+  footerActions: { marginTop: SPACING.md, marginBottom: SPACING.sm, paddingHorizontal: SPACING.containerPadding, gap: SPACING.sm },
+  presetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, height: 46, borderRadius: RADIUS.xl, borderWidth: 1 },
+  presetBtnText: { ...TYPOGRAPHY.headlineSm, fontSize: 15 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: SPACING.containerPadding },
+  modalCard: { borderRadius: RADIUS.xxl, borderWidth: 1, padding: SPACING.lg, gap: SPACING.md },
+  modalTitle: { ...TYPOGRAPHY.headlineSm },
+  modalSubtitle: { ...TYPOGRAPHY.bodyMd, lineHeight: 22 },
+  presetInput: { minHeight: 46, borderWidth: 1, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md, ...TYPOGRAPHY.bodyMd },
+  modalActions: { flexDirection: 'row', gap: SPACING.sm, justifyContent: 'flex-end' },
+  modalBtn: { minWidth: 96, height: 44, borderRadius: RADIUS.lg, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.md },
+  modalBtnText: { ...TYPOGRAPHY.labelMd },
 });

@@ -76,18 +76,27 @@ function HistoryCard({
   else if (diff < 86400000) timeLabel = `${Math.floor(diff / 3600000)} h ago`;
   else if (diff < 604800000) timeLabel = `${Math.floor(diff / 86400000)} days ago`;
   else timeLabel = new Date(item.createdAt).toLocaleDateString('en-US');
+  const previewBg = item.config.transparentBg ? '#ffffff' : item.config.bgColor;
 
   return (
     <View style={[styles.card, { backgroundColor: C.white, borderColor: C.outlineVariant }]}>
-      <View style={[styles.qrPreview, { borderColor: C.outlineVariant }]}>
-        <WebView
-          source={{ html: buildMiniQRHtml(item.content, item.config) }}
-          style={{ width: 64, height: 64, backgroundColor: 'transparent' }}
-          scrollEnabled={false}
-          javaScriptEnabled
-          pointerEvents="none"
-          originWhitelist={['*']}
-        />
+      <View style={[styles.qrPreview, { backgroundColor: previewBg, borderColor: C.outlineVariant }]}>
+        {item.localImagePath ? (
+          <Image
+            source={{ uri: item.localImagePath }}
+            style={styles.qrPreviewImage}
+            resizeMode="contain"
+          />
+        ) : (
+          <WebView
+            source={{ html: buildMiniQRHtml(item.content, item.config) }}
+            style={styles.qrPreviewWebView}
+            scrollEnabled={false}
+            javaScriptEnabled
+            pointerEvents="none"
+            originWhitelist={['*']}
+          />
+        )}
       </View>
       <View style={styles.cardMid}>
         <View style={styles.typeRow}>
@@ -116,7 +125,7 @@ function HistoryCard({
 
 export default function HistoryScreen() {
   const { colors: C, isDark } = useTheme();
-  const { items, loading, deleteItem, refresh } = useQRHistory();
+  const { items, deleteItem, clearAll, refresh } = useQRHistory();
   const exportWebRef = useRef<WebView>(null);
   const pendingExport = useRef<{ action: ExportAction; item: QRHistoryItem } | null>(null);
   const [exportReady, setExportReady] = useState(false);
@@ -177,6 +186,14 @@ export default function HistoryScreen() {
     ]);
   }
 
+  function handleClearAll() {
+    if (!items.length) return;
+    Alert.alert('Clear all?', 'This will delete every item from history and remove any saved local images.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear all', style: 'destructive', onPress: () => clearAll() },
+    ]);
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.surface }} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.surface} />
@@ -195,6 +212,17 @@ export default function HistoryScreen() {
       </View>
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: C.onSurface }]}>History</Text>
+        <Pressable
+          onPress={handleClearAll}
+          disabled={!items.length}
+          style={({ pressed }) => [
+            styles.clearAllBtn,
+            { backgroundColor: items.length ? `${C.error}14` : C.surfaceContainerHigh, opacity: pressed ? 0.85 : 1 },
+          ]}
+        >
+          <MaterialIcons name="delete-sweep" size={18} color={items.length ? C.error : C.outlineVariant} />
+          <Text style={[styles.clearAllText, { color: items.length ? C.error : C.outlineVariant }]}>Clear all</Text>
+        </Pressable>
       </View>
 
       <View style={[styles.searchWrap, { backgroundColor: C.white, borderColor: C.outlineVariant }]}>
@@ -270,8 +298,25 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: SPACING.containerPadding, paddingTop: SPACING.lg, paddingBottom: SPACING.sm },
-  headerTitle: { ...TYPOGRAPHY.headlineMd },
+  header: {
+    paddingHorizontal: SPACING.containerPadding,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+  },
+  headerTitle: { ...TYPOGRAPHY.headlineMd, flex: 1 },
+  clearAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: SPACING.md,
+    height: 36,
+    borderRadius: RADIUS.full,
+  },
+  clearAllText: { ...TYPOGRAPHY.labelMd },
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
     marginHorizontal: SPACING.containerPadding, marginBottom: SPACING.md,
@@ -288,7 +333,9 @@ const styles = StyleSheet.create({
   filterChipText: { ...TYPOGRAPHY.labelMd },
   list: { paddingHorizontal: SPACING.containerPadding, paddingBottom: SPACING.md, gap: SPACING.sm },
   card: { flexDirection: 'row', borderRadius: RADIUS.xxl, padding: SPACING.md, borderWidth: 1, alignItems: 'center', gap: SPACING.md },
-  qrPreview: { width: 64, height: 64, borderRadius: RADIUS.lg, overflow: 'hidden', borderWidth: 1 },
+  qrPreview: { width: 64, height: 64, borderRadius: RADIUS.lg, overflow: 'hidden', borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  qrPreviewImage: { width: '100%', height: '100%' },
+  qrPreviewWebView: { width: '100%', height: '100%', backgroundColor: 'transparent' },
   cardMid: { flex: 1, gap: 2 },
   typeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   typeBadge: { paddingHorizontal: SPACING.sm, paddingVertical: 2, borderRadius: RADIUS.full },

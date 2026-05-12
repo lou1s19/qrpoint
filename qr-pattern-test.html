@@ -23,8 +23,15 @@ input[type=url]:focus,input[type=text]:focus{border-color:#4648d4}
 .color-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .color-row label{font-size:13px;flex:1;color:#444}
 .color-row input[type=color]{width:40px;height:32px;border:1.5px solid #e0e0ef;border-radius:7px;cursor:pointer;padding:2px;background:#fff}
-.qr-preview{width:260px;height:260px;background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(70,72,212,.15);overflow:hidden}
-.qr-preview svg{width:100%;height:100%}
+.qr-preview{width:260px;height:260px;background:#fff;border-radius:14px;box-shadow:0 4px 24px rgba(70,72,212,.15);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:12px}
+.qr-preview svg{display:block;max-width:100%;max-height:100%;width:auto;height:auto}
+.range-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.range-row label{font-size:13px;color:#444}
+.range-value{font-size:12px;color:#888;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%}
+.toggle-row{display:flex;align-items:center;gap:10px;font-size:13px;color:#444;margin-top:10px}
+.toggle-row input{width:18px;height:18px;accent-color:#4648d4}
+.toggle-note{font-size:12px;color:#888;line-height:1.35;margin-top:6px}
 .btn-row{display:flex;gap:8px}
 .btn{padding:10px 18px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .2s}
 .btn:hover{opacity:.85}
@@ -76,6 +83,26 @@ select{width:100%;padding:8px 10px;border:1.5px solid #e0e0ef;border-radius:9px;
       </select>
     </div>
 
+    <div class="card">
+      <h3>Größe</h3>
+      <div class="range-row">
+        <label for="qr-size">QR-Größe</label>
+        <span class="range-value" id="qr-size-label"></span>
+      </div>
+      <input type="range" id="qr-size" min="120" max="360" step="10" value="180">
+      <div style="height:10px"></div>
+      <div class="range-row">
+        <label for="qr-margin">Außenrand</label>
+        <span class="range-value" id="qr-margin-label"></span>
+      </div>
+      <input type="range" id="qr-margin" min="0" max="80" step="4" value="10">
+      <label class="toggle-row">
+        <input type="checkbox" id="qr-rounded" checked>
+        <span>Ecken abrunden</span>
+      </label>
+      <div class="toggle-note">Kantige Ecken brauchen etwas mehr Außenrand; bei abgerundeten Ecken wirkt die Vorschau innen bereits weicher.</div>
+    </div>
+
   </div>
 
   <div class="preview-wrap">
@@ -83,7 +110,7 @@ select{width:100%;padding:8px 10px;border:1.5px solid #e0e0ef;border-radius:9px;
     <div id="status"></div>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="dlSVG()">SVG</button>
-      <button class="btn btn-secondary" onclick="dlPNG()">PNG 1024px</button>
+      <button class="btn btn-secondary" onclick="dlPNG()">PNG</button>
     </div>
   </div>
 </div>
@@ -432,8 +459,9 @@ const ICON_BALL = {
 };
 
 // State
-let state = { body:'flowing', frame:'rounded', ball:'circle', fg:'#000000', bg:'#ffffff', eye:'#4648d4', ecl:'M' };
+let state = { body:'flowing', frame:'rounded', ball:'circle', fg:'#000000', bg:'#ffffff', eye:'#4648d4', ecl:'M', rounded:true };
 let lastSVG = '';
+let lastRenderSize = 0;
 
 function buildPicker(containerId, styles, icons, key) {
   const el = document.getElementById(containerId);
@@ -463,8 +491,13 @@ function render() {
   const fg = document.getElementById('c-fg').value;
   const bg = document.getElementById('c-bg').value;
   const eye = document.getElementById('c-eye').value;
+  const qrSize = parseInt(document.getElementById('qr-size').value, 10) || 180;
+  const margin = parseInt(document.getElementById('qr-margin').value, 10) || 10;
+  const rounded = document.getElementById('qr-rounded').checked;
 
   document.getElementById('status').textContent = 'Generiere…';
+  document.getElementById('qr-size-label').textContent = `${qrSize}px`;
+  document.getElementById('qr-margin-label').textContent = `${margin}px`;
 
   setTimeout(() => {
     try {
@@ -472,17 +505,27 @@ function render() {
       if (!qr) { document.getElementById('status').textContent = 'Inhalt zu lang!'; return; }
 
       const sz = qr.size;
-      const pad = 4; // modules padding
-      const cellSize = 10;
-      const viewSize = (sz + pad*2) * cellSize;
+      const quietPad = 4; // QR quiet zone in modules
+      const gridModules = sz + quietPad * 2;
+      // Square corners need a bit more breathing room; rounded corners already read softer.
+      const shapeInset = rounded ? 0 : Math.max(8, Math.round(qrSize * 0.04));
+      const outerMargin = margin + shapeInset;
+      const moduleSize = qrSize / gridModules;
+      const qrOrigin = outerMargin + quietPad * moduleSize;
+      const viewSize = qrSize + outerMargin * 2;
       const bodyStyle = BODY_STYLES[state.body];
       const frameStyle = FRAME_STYLES[state.frame];
       const ballStyle = BALL_STYLES[state.ball];
+      const cornerRadius = rounded ? Math.max(12, Math.round(viewSize * 0.04)) : 0;
 
       let parts = '';
       parts += `<style>:root{--bg:${bg}}</style>`;
+      if (rounded) {
+        parts += `<defs><clipPath id="qr-clip"><rect x="0" y="0" width="${viewSize}" height="${viewSize}" rx="${cornerRadius}" ry="${cornerRadius}"/></clipPath></defs>`;
+        parts += `<g clip-path="url(#qr-clip)">`;
+      }
       // Background
-      parts += `<rect width="${viewSize}" height="${viewSize}" fill="${bg}"/>`;
+      parts += `<rect width="${viewSize}" height="${viewSize}" fill="${bg}"${rounded ? ` rx="${cornerRadius}" ry="${cornerRadius}"` : ''}/>`;
 
       // Draw body modules (skip finder pattern area)
       for (let r=0; r<sz; r++) {
@@ -490,7 +533,7 @@ function render() {
           if (!qr.isDark(r,c)) continue;
           if (isFinderModule(r,c,sz)) continue;
 
-          const x = (c+pad)*cellSize, y = (r+pad)*cellSize;
+          const x = qrOrigin + c*moduleSize, y = qrOrigin + r*moduleSize;
           // Neighbor mask for flowing style
           let n=0;
           if(r>0&&qr.isDark(r-1,c)&&!isFinderModule(r-1,c,sz)) n|=1;
@@ -498,20 +541,22 @@ function render() {
           if(r<sz-1&&qr.isDark(r+1,c)&&!isFinderModule(r+1,c,sz)) n|=4;
           if(c>0&&qr.isDark(r,c-1)&&!isFinderModule(r,c-1,sz)) n|=8;
 
-          parts += bodyStyle.draw(x, y, cellSize, n, fg);
+          parts += bodyStyle.draw(x, y, moduleSize, n, fg);
         }
       }
 
       // Draw finder patterns (eyes)
       const corners = [[0,0],[0,sz-7],[sz-7,0]];
       for (const [fr,fc] of corners) {
-        const x=(fc+pad)*cellSize, y=(fr+pad)*cellSize;
-        parts += frameStyle.draw(x, y, cellSize, eye);
-        parts += ballStyle.draw(x, y, cellSize, eye);
+        const x = qrOrigin + fc*moduleSize, y = qrOrigin + fr*moduleSize;
+        parts += frameStyle.draw(x, y, moduleSize, eye);
+        parts += ballStyle.draw(x, y, moduleSize, eye);
       }
+      if (rounded) parts += `</g>`;
 
       const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewSize} ${viewSize}" width="${viewSize}" height="${viewSize}">${parts}</svg>`;
       lastSVG = svgStr;
+      lastRenderSize = viewSize;
 
       const out = document.getElementById('qr-out');
       out.innerHTML = svgStr;
@@ -533,11 +578,11 @@ function dlSVG() {
 
 function dlPNG() {
   if (!lastSVG) return;
-  const size = 1024;
   const img = new Image();
   const svg64 = btoa(unescape(encodeURIComponent(lastSVG)));
   img.src = 'data:image/svg+xml;base64,' + svg64;
   img.onload = () => {
+    const size = lastRenderSize || img.naturalWidth || 1024;
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const ctx = c.getContext('2d');
@@ -557,6 +602,8 @@ buildPicker('ball-grid', BALL_STYLES, ICON_BALL, 'ball');
 document.getElementById('content').addEventListener('input', () => render());
 document.getElementById('ecl').addEventListener('change', () => render());
 ['c-fg','c-bg','c-eye'].forEach(id => document.getElementById(id).addEventListener('input', () => render()));
+['qr-size','qr-margin'].forEach(id => document.getElementById(id).addEventListener('input', () => render()));
+document.getElementById('qr-rounded').addEventListener('change', () => render());
 
 render();
 </script>

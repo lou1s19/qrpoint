@@ -4,9 +4,11 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  RefreshControl,
   TextInput,
   Pressable,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
@@ -16,7 +18,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { SPACING, RADIUS, TYPOGRAPHY } from '@/constants/Theme';
 import { useTheme } from '@/context/ThemeContext';
 import { useQRHistory } from '@/hooks/useQRHistory';
-import { QR_TYPE_LABELS, QR_TYPE_COLORS, QRHistoryItem } from '@/constants/QRTypes';
+import { QR_TYPE_LABELS, QR_TYPE_COLORS, QRHistoryItem, QRPreset } from '@/constants/QRTypes';
+import { useQRPresets } from '@/hooks/useQRPresets';
 
 function RecentCard({ item, onPress, C }: { item: QRHistoryItem; onPress: () => void; C: any }) {
   const typeColor = QR_TYPE_COLORS[item.type];
@@ -58,20 +61,69 @@ function RecentCard({ item, onPress, C }: { item: QRHistoryItem; onPress: () => 
   );
 }
 
+function PresetCard({
+  preset,
+  onPress,
+  onDelete,
+  C,
+}: {
+  preset: QRPreset;
+  onPress: () => void;
+  onDelete: () => void;
+  C: any;
+}) {
+  const previewBg = preset.config.transparentBg ? '#ffffff' : preset.config.bgColor;
+
+  return (
+    <View style={[styles.presetCard, { backgroundColor: C.white, borderColor: C.outlineVariant }]}>
+      <Pressable style={styles.presetCardMain} onPress={onPress}>
+        <View style={[styles.presetPreview, { backgroundColor: previewBg, borderColor: C.outlineVariant }]}>
+          <QRCode
+            value="https://example.com"
+            size={72}
+            color={preset.config.fgColor || '#000000'}
+            backgroundColor={previewBg}
+            ecl="H"
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.presetTitle, { color: C.onSurface }]} numberOfLines={1}>{preset.name}</Text>
+          <Text style={[styles.presetMeta, { color: C.onSurfaceVariant }]}>Saved {new Date(preset.createdAt).toLocaleDateString('en-US')}</Text>
+        </View>
+      </Pressable>
+      <Pressable onPress={onDelete} hitSlop={8} style={styles.presetDeleteBtn}>
+        <MaterialIcons name="delete-outline" size={20} color={C.onSurfaceVariant} />
+      </Pressable>
+    </View>
+  );
+}
+
 export default function DashboardScreen() {
   const router = useRouter();
   const { colors: C, isDark } = useTheme();
   const { items, refresh } = useQRHistory();
+  const { presets, deletePreset, refresh: refreshPresets } = useQRPresets();
   const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(
-    useCallback(() => { refresh(); }, [refresh])
+    useCallback(() => { refresh(); refreshPresets(); }, [refresh, refreshPresets])
   );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refresh(), refreshPresets()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh, refreshPresets]);
 
   const recent = useMemo(() => items.filter(i => !i.isScanned).slice(0, 10), [items]);
   const filtered = search.trim()
     ? recent.filter(i => i.title.toLowerCase().includes(search.toLowerCase()) || i.content.toLowerCase().includes(search.toLowerCase()))
     : recent;
+  const presetCards = useMemo(() => presets.slice(0, 8), [presets]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.surface }} edges={['top']}>
@@ -86,7 +138,12 @@ export default function DashboardScreen() {
         </Pressable>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 6 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 6 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.primary} colors={[C.primary]} />}
+      >
         {/* Greeting */}
         <View style={styles.greeting}>
           <Text style={[styles.greetingTitle, { color: C.onSurface }]}>Hello! 👋</Text>
@@ -126,6 +183,37 @@ export default function DashboardScreen() {
             <Text style={[styles.actionTitle, { color: '#fff' }]}>Create new</Text>
             <Text style={[styles.actionSubtitle, { color: 'rgba(255,255,255,0.75)' }]}>Custom QR for URLs & more</Text>
           </Pressable>
+        </View>
+
+        {/* Presets */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: C.onSurface }]}>Presets</Text>
+            <Text style={[styles.viewAll, { color: C.onSurfaceVariant }]}>{presets.length} saved</Text>
+          </View>
+
+          {presetCards.length === 0 ? (
+            <View style={[styles.emptyPreset, { backgroundColor: C.white, borderColor: C.outlineVariant }]}>
+              <MaterialIcons name="bookmark-border" size={40} color={C.outlineVariant} />
+              <Text style={[styles.emptyTitle, { color: C.onSurfaceVariant }]}>No presets yet</Text>
+              <Text style={[styles.emptySubtitle, { color: C.outline }]}>Save a design from Create to reuse it here.</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: SPACING.md, paddingRight: SPACING.containerPadding }}>
+              {presetCards.map(preset => (
+                <PresetCard
+                  key={preset.id}
+                  preset={preset}
+                  C={C}
+                  onPress={() => router.push({ pathname: '/create', params: { presetId: preset.id } })}
+                  onDelete={() => Alert.alert('Delete preset?', `Remove "${preset.name}" from your presets?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => deletePreset(preset.id) },
+                  ])}
+                />
+              ))}
+            </ScrollView>
+          )}
         </View>
 
         {/* Recently Created */}
@@ -189,6 +277,13 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
   sectionTitle: { ...TYPOGRAPHY.headlineSm },
   viewAll: { ...TYPOGRAPHY.labelMd },
+  presetCard: { width: 210, borderRadius: RADIUS.xxl, padding: SPACING.sm, paddingBottom: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  presetCardMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  presetPreview: { width: 88, height: 88, borderRadius: RADIUS.lg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 8, borderWidth: 1 },
+  presetTitle: { ...TYPOGRAPHY.labelMd, marginBottom: 2 },
+  presetMeta: { ...TYPOGRAPHY.labelSm },
+  presetDeleteBtn: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  emptyPreset: { alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xl, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.xxl, borderWidth: 1, gap: SPACING.sm },
   recentCard: { width: 170, borderRadius: RADIUS.xxl, padding: SPACING.sm, paddingBottom: 12, borderWidth: 1 },
   recentQRWrap: { height: 134, borderRadius: RADIUS.xl, marginBottom: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 26 },
   miniQR: { width: 86, height: 86, borderRadius: RADIUS.lg, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 5 },

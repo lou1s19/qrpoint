@@ -1,5 +1,17 @@
 export type QRType = 'url' | 'wifi' | 'vcard' | 'text' | 'email' | 'phone' | 'sms' | 'mecard' | 'location' | 'facebook' | 'twitter' | 'youtube' | 'event' | 'crypto';
 
+export const UNTESTED_QR_TYPES: QRType[] = [
+  'vcard',
+  'mecard',
+  'location',
+  'facebook',
+  'twitter',
+  'youtube',
+  'event',
+  'crypto',
+  'wifi',
+];
+
 export type DotsStyle =
   | 'square'
   | 'mosaic'
@@ -77,6 +89,7 @@ export interface QRCodeConfig {
   margin: number;
   qrSize: number;
   transparentBg: boolean;
+  roundedCorners: boolean;
 }
 
 export interface QRHistoryItem {
@@ -88,6 +101,13 @@ export interface QRHistoryItem {
   isScanned: boolean;
   config: QRCodeConfig;
   localImagePath?: string;
+}
+
+export interface QRPreset {
+  id: string;
+  name: string;
+  createdAt: number;
+  config: QRCodeConfig;
 }
 
 export interface MeCardData {
@@ -175,9 +195,10 @@ export const DEFAULT_QR_CONFIG: QRCodeConfig = {
   bgColor: '#ffffff',
   logoMargin: 0,
   logoRadius: 0,
-  margin: 40,
+  margin: 10,
   qrSize: 1024,
   transparentBg: false,
+  roundedCorners: true,
 };
 
 export function normalizeUrlContent(value: string): string {

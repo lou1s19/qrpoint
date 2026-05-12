@@ -99,6 +99,19 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
 
+          <Text style={[styles.sectionTitle, { color: C.onSurfaceVariant }]}>QR CODES</Text>
+          <View style={[styles.card, { backgroundColor: C.white, borderColor: C.outlineVariant }]}>
+            <View style={styles.row}>
+              <View style={[styles.iconWrap, { backgroundColor: isDark ? C.surfaceContainerHigh : '#e8f5e9' }]}>
+                <MaterialIcons name="cloud-off" size={20} color="#2e7d32" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowText, { color: C.onSurface }]}>Local generation</Text>
+                <Text style={[styles.rowSubtext, { color: C.onSurfaceVariant }]}>QR codes are created on your device and do not depend on a server.</Text>
+              </View>
+            </View>
+          </View>
+
           <Text style={[styles.version, { color: C.onSurfaceVariant }]}>QR Point • Version 1.0.0</Text>
         </ScrollView>
       </SafeAreaView>
