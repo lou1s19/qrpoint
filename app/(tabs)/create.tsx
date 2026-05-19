@@ -47,6 +47,7 @@ import { QR_GENERATOR_HTML } from '@/constants/QRGeneratorHTML';
 
 type TabId = 'content' | 'design' | 'colors' | 'logo';
 type QRSizePreset = 'small' | 'medium' | 'large' | 'custom';
+type ExportFormat = 'png' | 'jpeg';
 
 type ExtendedQRConfig = QRCodeConfig & { logoRadius?: number };
 
@@ -84,6 +85,10 @@ const QR_TYPES: QRType[] = ['url', 'text', 'email', 'phone', 'sms', 'vcard', 'me
 const UNAVAILABLE_QR_TYPES = new Set<QRType>(UNTESTED_QR_TYPES);
 const PRESET_FG = ['#4648d4', '#000000', '#1a1a2e', '#e63946', '#2d6a4f', '#f77f00', '#7b2d8b', '#0077b6', '#333333', '#c77dff'];
 const PRESET_BG = ['#ffffff', '#faf8ff', '#f0f0f0', '#e8f4fd', '#fff3e0', '#fce4ec', '#f3e5f5', '#e8f5e9', '#fffde7', '#000000'];
+const EXPORT_FORMATS: Array<{ value: ExportFormat; label: string }> = [
+  { value: 'png', label: 'PNG' },
+  { value: 'jpeg', label: 'JPEG' },
+];
 
 const SHAPE_IMAGES: Record<string, any> = {
   "ball0": require("@/assets/images/shapes/ball0.png"),
@@ -487,6 +492,7 @@ export default function CreateScreen() {
     data: string; fgColor: string; bgColor: string; transparent: boolean;
     dotsType: string; cornersSquareType: string; cornersDotType: string;
     logo?: string; logoMargin?: number; margin?: number; size: number; rounded?: boolean; roundedCorners?: boolean; cornerRadiusRatio?: number;
+    format?: ExportFormat;
   }): Promise<string> {
     return new Promise((resolve, reject) => {
       if (!qrWebViewRef.current) { reject(new Error('WebView not ready')); return; }
@@ -512,6 +518,7 @@ export default function CreateScreen() {
   const [qrType, setQrType] = useState<QRType>('url');
   const [config, setConfig] = useState<ExtendedQRConfig>({ ...DEFAULT_QR_CONFIG, logoRadius: 0, logoMargin: 0 });
   const [exporting, setExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('png');
   const [moduleStylesExpanded, setModuleStylesExpanded] = useState(false);
   const [qrSizePreset, setQrSizePreset] = useState<QRSizePreset>('medium');
   const [showPresetModal, setShowPresetModal] = useState(false);
@@ -777,9 +784,11 @@ export default function CreateScreen() {
         rounded: config.roundedCorners,
         roundedCorners: config.roundedCorners,
         cornerRadiusRatio: config.roundedCorners ? QR_CORNER_RADIUS_RATIO : 0,
+        format: exportFormat,
       });
       const base64 = roundedDataUri.split(',')[1];
-      const filename = `qr-${Date.now()}.png`;
+      const extension = exportFormat === 'jpeg' ? 'jpg' : 'png';
+      const filename = `qr-${Date.now()}.${extension}`;
       const path = `${FileSystem.documentDirectory}${filename}`;
       await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
       await addItem({
@@ -795,7 +804,7 @@ export default function CreateScreen() {
       const permission = await MediaLibrary.requestPermissionsAsync();
       if (permission.granted) {
         await MediaLibrary.saveToLibraryAsync(path);
-        Alert.alert('Saved', 'The QR code was saved to your history and photos.');
+        Alert.alert('Saved', `The QR code was saved as ${exportFormat.toUpperCase()} to your history and photos.`);
       } else {
         Alert.alert('Saved to History', 'The QR code was saved to your history. Permission needed to save to photos.');
       }
@@ -1016,6 +1025,22 @@ export default function CreateScreen() {
         </View>
 
         <View style={styles.footerActions}>
+          <View style={styles.exportPanel}>
+            <Text style={[styles.fieldLabel, { color: C.onSurfaceVariant, marginBottom: 0 }]}>FILE FORMAT</Text>
+            <View style={[styles.exportFormatRow, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }]}>
+              {EXPORT_FORMATS.map(option => (
+                <Pressable
+                  key={option.value}
+                  style={[styles.exportFormatBtn, exportFormat === option.value && { backgroundColor: C.primary }]}
+                  onPress={() => setExportFormat(option.value)}
+                >
+                  <Text style={[styles.exportFormatText, { color: exportFormat === option.value ? C.onPrimary : C.onSurfaceVariant }]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
           <Pressable
             style={[styles.presetBtn, { backgroundColor: C.surfaceContainerLow, borderColor: C.outlineVariant }]}
             onPress={() => {
@@ -1028,7 +1053,7 @@ export default function CreateScreen() {
           </Pressable>
           <Pressable style={[styles.saveBtn, styles.saveBtnInline, { backgroundColor: C.primary, shadowColor: C.primary }, exporting && styles.saveBtnDisabled]} onPress={handleSaveAndExport} disabled={exporting}>
             {exporting ? <ActivityIndicator color={C.onPrimary} size="small" /> : <MaterialIcons name="download" size={22} color={C.onPrimary} />}
-            <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>{exporting ? 'Saving...' : 'Save to Photos'}</Text>
+            <Text style={[styles.saveBtnText, { color: C.onPrimary }]}>{exporting ? 'Saving...' : `Save ${exportFormat.toUpperCase()}`}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -1165,6 +1190,10 @@ const styles = StyleSheet.create({
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { ...TYPOGRAPHY.headlineSm, fontSize: 16 },
   footerActions: { marginTop: SPACING.md, marginBottom: SPACING.sm, paddingHorizontal: SPACING.containerPadding, gap: SPACING.sm },
+  exportPanel: { gap: SPACING.sm },
+  exportFormatRow: { flexDirection: 'row', borderRadius: RADIUS.xl, borderWidth: 1, padding: 4, gap: 4 },
+  exportFormatBtn: { flex: 1, minHeight: 40, borderRadius: RADIUS.lg, alignItems: 'center', justifyContent: 'center' },
+  exportFormatText: { ...TYPOGRAPHY.labelMd },
   presetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, height: 46, borderRadius: RADIUS.xl, borderWidth: 1 },
   presetBtnText: { ...TYPOGRAPHY.headlineSm, fontSize: 15 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: SPACING.containerPadding },
